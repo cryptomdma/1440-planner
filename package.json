@@ -1,0 +1,13 @@
+{
+  "name": "1440-planner",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "web": "npm run dev --workspace=apps/web",
+    "mobile": "npm run start --workspace=apps/mobile",
+    "build:web": "npm run build --workspace=apps/web"
+  }
+}
