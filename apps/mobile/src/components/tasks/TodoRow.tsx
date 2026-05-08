@@ -13,6 +13,7 @@ interface Props {
 }
 
 export default function TodoRow({ todo, isPicking, onDone, onDelete, onSchedule, onPick }: Props) {
+  if (!todo) return null;
   const cat        = CATEGORIES.find(c => c.id === todo.categoryId);
   const pri        = PRIORITIES.find(p => p.id === todo.priority);
   const isScheduled = todo.status === 'scheduled';

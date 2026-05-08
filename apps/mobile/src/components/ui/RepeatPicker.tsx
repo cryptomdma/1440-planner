@@ -16,6 +16,7 @@ const MODES: { id: RepeatMode; label: string }[] = [
 ];
 
 export default function RepeatPicker({ value, onChange }: Props) {
+  if (!value) return null;
   const set = (patch: Partial<RepeatConfig>) => onChange({ ...value, ...patch });
 
   return (

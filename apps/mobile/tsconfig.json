@@ -3,14 +3,19 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
-      "@1440/core": ["../../packages/core/src"],
-      "@1440/core/*": ["../../packages/core/src/*"]
+      "@1440/core": [
+        "../../packages/core/src"
+      ],
+      "@1440/core/*": [
+        "../../packages/core/src/*"
+      ]
     }
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
     ".expo/types/**/*.d.ts",
-    "expo-env.d.ts"
+    "expo-env.d.ts",
+    ".expo/types/**/*.ts"
   ]
 }
