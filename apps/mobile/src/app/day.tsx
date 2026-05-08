@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
-  DESIGN_TOKENS as C, MINUTES_IN_DAY,
+  CATEGORIES, DESIGN_TOKENS as C, MINUTES_IN_DAY,
   useCalendarStore, useTodoStore, useSettingsStore,
   useCurrentMinute, expandRepeat, minuteToTimeStr, isToday,
   today,
@@ -58,6 +58,14 @@ export default function DayScreen() {
   const displayNum     = countMode === 'down' ? MINUTES_IN_DAY - currentMinute : currentMinute;
   const dayPct         = Math.round((currentMinute / MINUTES_IN_DAY) * 100);
   const progressPct    = countMode === 'down' ? 100 - dayPct : dayPct;
+
+  const nextEvent = todayFlag
+    ? dayEvents
+        .filter(e => e.startMinute > currentMinute)
+        .sort((a, b) => a.startMinute - b.startMinute)[0] ?? null
+    : null;
+  const minsUntilNext = nextEvent ? nextEvent.startMinute - currentMinute : null;
+  const nextCat       = nextEvent ? CATEGORIES.find(c => c.id === nextEvent.categoryId) : null;
 
   const allDatesWithEvents = [...new Set(events.map(e => e.date))];
 
@@ -159,6 +167,18 @@ export default function DayScreen() {
 
       </View>
 
+      {/* Next-block countdown banner (today only, when a future block exists) */}
+      {nextEvent && minsUntilNext !== null && (
+        <View style={[s.nextBar, { borderLeftColor: nextCat?.color ?? ac }]}>
+          <Text style={s.nextText} numberOfLines={1}>
+            <Text style={[s.nextMin, { color: ac }]}>in {minsUntilNext}m</Text>
+            {'  ·  '}
+            <Text style={[s.nextTitle, { color: nextCat?.color ?? C.L1 }]}>{nextEvent.title}</Text>
+            <Text style={s.nextTime}>{'  '}{minuteToTimeStr(nextEvent.startMinute)}</Text>
+          </Text>
+        </View>
+      )}
+
       {/* Timeline */}
       <DayGrid
         events={dayEvents}
@@ -247,6 +267,16 @@ const s = StyleSheet.create({
   modeBtn:      { paddingHorizontal: 6, paddingVertical: 3 },
   modeTxt:      { fontSize: 9, color: C.L3 },
   settingsIcon: { fontSize: 13, color: C.L3, padding: 2 },
+  nextBar: {
+    paddingHorizontal: 14, paddingVertical: 5,
+    backgroundColor: C.bg1,
+    borderLeftWidth: 3,
+    borderBottomWidth: 1, borderBottomColor: C.border,
+  },
+  nextText:  { fontSize: 10, color: C.L2 },
+  nextMin:   { fontWeight: '900' },
+  nextTitle: { fontWeight: '700' },
+  nextTime:  { color: C.L3, fontSize: 9 },
   fab: {
     position: 'absolute', bottom: 16, right: 16,
     paddingHorizontal: 16, paddingVertical: 9,

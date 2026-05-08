@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import {
   View, ScrollView, Text, Pressable, StyleSheet, Platform,
 } from 'react-native';
@@ -29,17 +29,25 @@ export default function DayGrid({
   events, selectedEvent, currentMinute, countMode, accentColor,
   wakeMinute, sleepMinute, isToday, onSelectEvent, onLongPress,
 }: Props) {
-  const scrollRef = useRef<ScrollView>(null);
-  const layout    = computeLayout(events);
+  const scrollRef      = useRef<ScrollView>(null);
+  const didInitScroll  = useRef(false);
+  const layout         = computeLayout(events);
 
-  // Auto-scroll to NOW line on mount / day change
+  const nowY = Math.max(0, currentMinute * PPM - 250);
+
+  // When the date switches to today, scroll to now with animation.
   useEffect(() => {
-    if (!isToday) return;
-    const timer = setTimeout(() => {
-      scrollRef.current?.scrollTo({ y: Math.max(0, currentMinute * PPM - 250), animated: true });
-    }, 200);
-    return () => clearTimeout(timer);
+    if (!isToday) { didInitScroll.current = false; return; }
+    scrollRef.current?.scrollTo({ y: nowY, animated: true });
   }, [isToday]);
+
+  // On initial layout, snap to now instantly (no animation) so the
+  // view opens already at the current time rather than top-of-day.
+  const handleLayout = useCallback(() => {
+    if (!isToday || didInitScroll.current) return;
+    didInitScroll.current = true;
+    scrollRef.current?.scrollTo({ y: nowY, animated: false });
+  }, [isToday, nowY]);
 
   const handleLongPress = (e: any) => {
     const y   = e.nativeEvent.locationY;
@@ -54,6 +62,7 @@ export default function DayGrid({
       contentContainerStyle={{ height: TOTAL_HEIGHT }}
       showsVerticalScrollIndicator={false}
       removeClippedSubviews
+      onLayout={handleLayout}
     >
       <Pressable
         style={[s.inner, { height: TOTAL_HEIGHT }]}
