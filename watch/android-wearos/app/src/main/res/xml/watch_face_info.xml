@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WatchFaceInfo xmlns:android="http://schemas.android.com/apk/res/android">
+    <Preview value="@drawable/watch_face_preview" />
+    <Category value="CATEGORY_CUSTOM" />
+    <AvailabilityCategory value="CONNECTIVITY_COMPANION_APP" />
+    <ConnectToWatchFace value="true" />
+</WatchFaceInfo>

@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(\\(Get-Content \"c:\\\\dev\\\\1440-planner\\\\apps\\\\web\\\\src\\\\App.jsx\" | Measure-Object -Line\\).Lines)",
+      "PowerShell(\\(ls -Recurse c:\\\\dev\\\\1440-planner\\\\packages\\\\core\\\\src\\\\ -File\\).FullName)",
+      "PowerShell(head -30)",
+      "PowerShell(Get-ChildItem \"c:\\\\dev\\\\1440-planner\\\\packages\\\\core\\\\src\" -Recurse | ForEach-Object { $size = $_.Length; \"$\\($_.FullName\\) \\($size bytes\\)\" })",
+      "PowerShell(Get-ChildItem \"c:\\\\dev\\\\1440-planner\\\\apps\\\\mobile\\\\src\" -Recurse -File | ForEach-Object { $size = $_.Length; \"$\\($_.FullName\\) \\($size bytes\\)\" })",
+      "PowerShell(Get-ChildItem \"c:\\\\dev\\\\1440-planner\\\\watch\" -Recurse -File | ForEach-Object { $size = $_.Length; \"$\\($_.FullName\\) \\($size bytes\\)\" })"
+    ]
+  }
+}
