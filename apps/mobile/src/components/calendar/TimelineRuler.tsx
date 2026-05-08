@@ -36,7 +36,7 @@ export default function TimelineRuler({ countMode }: Props) {
       })}
       {/* Hour labels */}
       {HOURS.map(h => (
-        <View key={h} style={[s.hourRow, { top: h * 60 * PPM }]}>
+        <View key={h} style={[s.hourRow, { top: h * 60 * PPM - 6 }]}>
           <Text style={s.hourLabel}>{label(h * 60)}</Text>
           <View style={s.hrLine} />
         </View>
@@ -54,7 +54,7 @@ const s = StyleSheet.create({
   },
   hourRow: {
     position: 'absolute', left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'center', height: 1,
+    flexDirection: 'row', alignItems: 'center', height: 12,
   },
   hourLabel: {
     width: RULER_W - 14,
