@@ -66,7 +66,9 @@ export default function BlockModal(props: Props) {
         <Animated.View style={[s.sheet, { transform: [{ translateY: slideAnim }] }]}>
           {props.mode === 'add'
             ? <AddForm {...props} onClose={onClose} />
-            : <EditForm {...props} onClose={onClose} />}
+            : props.event
+              ? <EditForm {...props} onClose={onClose} />
+              : null}
         </Animated.View>
       </KeyboardAvoidingView>
     </Modal>
@@ -198,19 +200,20 @@ function EditForm(props: EditMode & { onClose: () => void }) {
   const { event, onUpdate, onDelete, onClose, accentColor } = props;
   const ac = accentColor ?? C.amber;
 
-  const [title,      setTitle]      = useState(event.title);
-  const [start,      setStart]      = useState(event.startMinute);
-  const [duration,   setDuration]   = useState(event.durationMinutes);
-  const [categoryId, setCategoryId] = useState(event.categoryId);
-  const [date,       setDate]       = useState(event.date);
+  const [title,      setTitle]      = useState(() => event?.title ?? '');
+  const [start,      setStart]      = useState(() => event?.startMinute ?? 0);
+  const [duration,   setDuration]   = useState(() => event?.durationMinutes ?? 60);
+  const [categoryId, setCategoryId] = useState(() => event?.categoryId ?? 'deep' as const);
+  const [date,       setDate]       = useState(() => event?.date ?? today());
 
   useEffect(() => {
+    if (!event) return;
     setTitle(event.title);
     setStart(event.startMinute);
     setDuration(event.durationMinutes);
     setCategoryId(event.categoryId);
     setDate(event.date);
-  }, [event.id]);
+  }, [event?.id]);
 
   const commit = (patch: Partial<CalendarEvent>) => onUpdate(event.id, patch);
   const cat = CATEGORIES.find(c => c.id === categoryId);

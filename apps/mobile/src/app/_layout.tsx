@@ -5,7 +5,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Slot, usePathname, useRouter } from 'expo-router';
 import {
   DESIGN_TOKENS as C,
-  useCalendarStore, useSettingsStore,
+  useCalendarStore, useSettingsStore, useTodoStore,
   useCurrentMinute,
 } from '@1440/core';
 import { initAllStores } from '../services/storage';
@@ -33,7 +33,8 @@ export default function RootLayout() {
     const waitForHydration = () => {
       const calHydrated      = useCalendarStore.persist.hasHydrated();
       const settingsHydrated = useSettingsStore.persist.hasHydrated();
-      if (calHydrated && settingsHydrated) {
+      const todoHydrated     = useTodoStore.persist.hasHydrated();
+      if (calHydrated && settingsHydrated && todoHydrated) {
         setHydrated(true);
       } else if (checks < 50) {
         checks++;
