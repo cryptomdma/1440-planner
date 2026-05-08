@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet, useWindowDimensions } from 'react-native';
+import { View, Text, Pressable, StyleSheet, useWindowDimensions, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { CATEGORIES, DESIGN_TOKENS as C, PPM, RULER_W } from '@1440/core';
 import type { CalendarEvent, EventLayoutSlot } from '@1440/core';
@@ -16,6 +16,7 @@ const RIGHT_PAD = 8;
 
 export default function EventBlock({ event, layout, selected, onSelect }: Props) {
   const { width: screenWidth } = useWindowDimensions();
+  if (!event) return null;
   const cat = CATEGORIES.find(c => c.id === event.categoryId);
 
   const { column = 0, totalColumns = 1 } = layout;
@@ -80,8 +81,11 @@ const s = StyleSheet.create({
   dot:      { width: 5, height: 5, borderRadius: 3, flexShrink: 0 },
   title: {
     color: C.L1, fontSize: 10, fontWeight: '600',
-    fontFamily: 'Courier New', flex: 1,
+    fontFamily: Platform.select({ ios: 'Courier New', default: 'monospace' }), flex: 1,
   },
   badge:     { fontSize: 8, flexShrink: 0 },
-  timeLabel: { color: C.L2, fontSize: 8, fontFamily: 'Courier New', marginTop: 1 },
+  timeLabel: {
+    color: C.L2, fontSize: 8, marginTop: 1,
+    fontFamily: Platform.select({ ios: 'Courier New', default: 'monospace' }),
+  },
 });

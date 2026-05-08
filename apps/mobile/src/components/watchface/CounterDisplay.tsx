@@ -1,6 +1,9 @@
 import React from 'react';
+import { Platform } from 'react-native';
 import { Text as SvgText } from 'react-native-svg';
 import { DESIGN_TOKENS as C, MINUTES_IN_DAY, minuteToTimeStr } from '@1440/core';
+
+const MONO = Platform.select({ ios: 'Courier New', default: 'monospace' });
 
 interface Props {
   cx:            number;
@@ -22,7 +25,7 @@ export default function CounterDisplay({ cx, cy, currentMinute, countMode, accen
         textAnchor="middle"
         fill={accentColor}
         fontSize={15}
-        fontFamily="Courier New"
+        fontFamily={MONO}
         fontWeight="bold"
       >
         {displayVal}
@@ -32,7 +35,7 @@ export default function CounterDisplay({ cx, cy, currentMinute, countMode, accen
         textAnchor="middle"
         fill={C.L3}
         fontSize={6}
-        fontFamily="Courier New"
+        fontFamily={MONO}
       >
         {modeLabel}
       </SvgText>
@@ -41,7 +44,7 @@ export default function CounterDisplay({ cx, cy, currentMinute, countMode, accen
         textAnchor="middle"
         fill={C.L2}
         fontSize={8.5}
-        fontFamily="Courier New"
+        fontFamily={MONO}
       >
         {clockStr}
       </SvgText>

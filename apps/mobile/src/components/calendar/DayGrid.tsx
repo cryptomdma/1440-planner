@@ -1,6 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import {
-  View, ScrollView, Text, Pressable, StyleSheet,
+  View, ScrollView, Text, Pressable, StyleSheet, Platform,
 } from 'react-native';
 import {
   DESIGN_TOKENS as C, PPM, MINUTES_IN_DAY, BLOCK_SIZE, RULER_W,
@@ -111,6 +111,6 @@ const s = StyleSheet.create({
   nowLine: { flex: 1, height: 1.5, opacity: 0.7 },
   nowLabel: {
     fontSize: 8, fontWeight: '700', marginLeft: 4,
-    fontFamily: 'Courier New',
+    fontFamily: Platform.select({ ios: 'Courier New', default: 'monospace' }),
   },
 });

@@ -1,5 +1,7 @@
 import React from 'react';
-import { useWindowDimensions } from 'react-native';
+import { useWindowDimensions, Platform } from 'react-native';
+
+const MONO = Platform.select({ ios: 'Courier New', default: 'monospace' });
 import Svg, {
   Circle, Line, Path, Defs, RadialGradient, Stop, G,
   Text as SvgText,
@@ -117,7 +119,7 @@ export default function WatchCanvas({ currentMinute, events, countMode }: Props)
               textAnchor="middle"
               fill={C.L3}
               fontSize={5.5}
-              fontFamily="Courier New"
+              fontFamily={MONO}
             >
               {label}
             </SvgText>

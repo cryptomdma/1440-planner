@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { DESIGN_TOKENS as C, PPM, MINUTES_IN_DAY, minuteToTimeStr } from '@1440/core';
 
 const HOURS = Array.from({ length: 25 }, (_, i) => i); // 0–24 (midnight bookends)
@@ -59,7 +59,7 @@ const s = StyleSheet.create({
   hourLabel: {
     width: RULER_W - 14,
     fontSize: 8, color: C.L3,
-    fontFamily: 'Courier New',
+    fontFamily: Platform.select({ ios: 'Courier New', default: 'monospace' }),
     textAlign: 'right', paddingRight: 4,
   },
   hrLine: {
