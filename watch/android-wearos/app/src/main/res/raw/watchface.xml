@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  1440 Planner — Watch Face Format (WFF) descriptor.
+  Declarative watch face for Wear OS 3.5+.
+  Dynamic data (events, current minute) is injected by DataLayerClient.kt
+  via WatchFaceService complication slots.
+-->
+<WatchFace width="450" height="450"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+
+    <Metadata>
+        <Key name="CLOCK_TYPE" value="ANALOG" />
+        <Key name="PREVIEW_TIME" value="10:08:32" />
+    </Metadata>
+
+    <Scene backgroundColor="#07090f">
+
+        <!-- Outer ring border -->
+        <PartDraw x="0" y="0" width="450" height="450" pivotX="225" pivotY="225">
+            <Arc centerX="225" centerY="225" width="430" height="430"
+                startAngle="-90" sweepAngle="360"
+                strokeWidth="1.5" strokeColor="#F59E0B" strokeAlpha="140"
+                style="STROKE" />
+        </PartDraw>
+
+        <!-- 96-tick outer ring: major ticks at every 4th (hour quarters), minor in between -->
+        <!-- Major ticks (24 total) -->
+        <Group x="0" y="0" width="450" height="450" pivotX="225" pivotY="225">
+            <PartDraw x="0" y="0" width="450" height="450"
+                pivotX="225" pivotY="225"
+                angleDegreesExpression="(index / 24.0) * 360 - 90"
+                repeat="24">
+                <Line startX="225" startY="19" endX="225" endY="29"
+                    strokeWidth="1.8" strokeColor="#F59E0B" strokeAlpha="230" />
+            </PartDraw>
+        </Group>
+
+        <!-- Minor ticks (72 remaining) -->
+        <Group x="0" y="0" width="450" height="450" pivotX="225" pivotY="225">
+            <PartDraw x="0" y="0" width="450" height="450"
+                pivotX="225" pivotY="225"
+                angleDegreesExpression="(index / 96.0) * 360 - 90"
+                repeat="96">
+                <Line startX="225" startY="21" endX="225" endY="26"
+                    strokeWidth="0.6" strokeColor="#3d4f66" strokeAlpha="180" />
+            </PartDraw>
+        </Group>
+
+        <!-- Center dial background -->
+        <PartDraw x="0" y="0" width="450" height="450" pivotX="225" pivotY="225">
+            <Arc centerX="225" centerY="225" width="148" height="148"
+                startAngle="-90" sweepAngle="360"
+                strokeWidth="0"
+                fillColor="#07090f" />
+            <Arc centerX="225" centerY="225" width="148" height="148"
+                startAngle="-90" sweepAngle="360"
+                strokeWidth="1" strokeColor="#1f2d42"
+                style="STROKE" />
+        </PartDraw>
+
+        <!-- Progress arc (current minute progress) — driven by complication data -->
+        <PartDraw x="0" y="0" width="450" height="450" pivotX="225" pivotY="225">
+            <Arc centerX="225" centerY="225" width="394" height="394"
+                startAngle="-90"
+                sweepAngle="[COMPLICATION.CURRENT_PROGRESS_SWEEP]"
+                strokeWidth="2.8" strokeColor="#F59E0B" strokeAlpha="230"
+                strokeCap="ROUND" style="STROKE" />
+        </PartDraw>
+
+        <!-- Minute hand (1440-position) -->
+        <PartDraw x="0" y="0" width="450" height="450" pivotX="225" pivotY="225"
+            angleDegreesExpression="[COMPLICATION.MINUTE_HAND_ANGLE]">
+            <Line startX="225" startY="225" endX="225" endY="85"
+                strokeWidth="2.2" strokeColor="#F59E0B" strokeAlpha="255"
+                strokeCap="ROUND" />
+        </PartDraw>
+
+        <!-- Center dot -->
+        <PartDraw x="0" y="0" width="450" height="450" pivotX="225" pivotY="225">
+            <Arc centerX="225" centerY="225" width="14" height="14"
+                startAngle="-90" sweepAngle="360"
+                strokeWidth="0" fillColor="#F59E0B" />
+        </PartDraw>
+
+        <!-- Center minute counter (bound to complication slot) -->
+        <ComplicationSlot slotId="1" x="165" y="155" width="120" height="60"
+            supportedTypes="SHORT_TEXT" />
+
+        <!-- Next block complication -->
+        <ComplicationSlot slotId="2" x="100" y="310" width="250" height="40"
+            supportedTypes="SHORT_TEXT" />
+
+    </Scene>
+</WatchFace>

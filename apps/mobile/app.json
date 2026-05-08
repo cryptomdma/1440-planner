@@ -1,0 +1,28 @@
+{
+  "expo": {
+    "name": "1440 Planner",
+    "slug": "1440-planner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "1440planner",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#07090f",
+    "plugins": [
+      ["expo-router", { "root": "src" }],
+      "expo-notifications"
+    ],
+    "android": {
+      "package": "com.planner1440.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#07090f"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.planner1440.app",
+      "supportsTablet": true
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
