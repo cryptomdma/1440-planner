@@ -51,11 +51,12 @@ function idxForDate(todayStr: string, date: string): number {
 }
 
 export default function DateStrip({ selectedDate, datesWithEvents, onSelect, accentColor = C.amber }: Props) {
-  const listRef   = useRef<FlatList>(null);
-  const didInit   = useRef(false);
-  const todayStr  = useMemo(() => today(), []);
-  const evSet     = useMemo(() => new Set(datesWithEvents), [datesWithEvents]);
-  const days      = useMemo(() => buildDays(todayStr), [todayStr]);
+  const listRef    = useRef<FlatList>(null);
+  const didInit    = useRef(false);
+  const viewportW  = useRef(0); // FlatList visible width, captured in onLayout
+  const todayStr   = useMemo(() => today(), []);
+  const evSet      = useMemo(() => new Set(datesWithEvents), [datesWithEvents]);
+  const days       = useMemo(() => buildDays(todayStr), [todayStr]);
 
   const [expanded,  setExpanded]  = useState(false);
   const [gridMonth, setGridMonth] = useState(() => {
@@ -63,9 +64,12 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
     return { year: d.getFullYear(), month: d.getMonth() };
   });
 
+  // Pixel-accurate centering: offset so the target item sits mid-viewport.
+  // scrollToOffset never needs items to be rendered, unlike scrollToIndex.
   const scrollTo = useCallback((date: string, animated: boolean) => {
-    const idx = Math.max(0, Math.min(TOTAL - 1, idxForDate(todayStr, date)));
-    listRef.current?.scrollToIndex({ index: idx, animated, viewPosition: 0.5 });
+    const idx    = Math.max(0, Math.min(TOTAL - 1, idxForDate(todayStr, date)));
+    const offset = Math.max(0, idx * ITEM_W - (viewportW.current - ITEM_W) / 2);
+    listRef.current?.scrollToOffset({ offset, animated });
   }, [todayStr]);
 
   // Scroll strip to selected date whenever it changes
@@ -75,8 +79,9 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
     setGridMonth({ year: d.getFullYear(), month: d.getMonth() });
   }, [selectedDate]);
 
-  // One-time initial centering (no animation so it snaps immediately)
-  const handleLayout = useCallback(() => {
+  // Capture viewport width then center once, no animation
+  const handleLayout = useCallback((e: any) => {
+    viewportW.current = e.nativeEvent.layout.width;
     if (didInit.current) return;
     didInit.current = true;
     scrollTo(selectedDate, false);
@@ -151,15 +156,7 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
           getItemLayout={getItemLayout}
           initialScrollIndex={MID_IDX}
           onLayout={handleLayout}
-          onScrollToIndexFailed={info => {
-            // Fallback: scroll by pixel offset if index-based scroll fails
-            setTimeout(() => {
-              listRef.current?.scrollToOffset({
-                offset: info.index * ITEM_W,
-                animated: false,
-              });
-            }, 50);
-          }}
+          onScrollToIndexFailed={() => {}}
           extraData={[selectedDate, accentColor, evSet]}
           removeClippedSubviews
           style={s.list}
