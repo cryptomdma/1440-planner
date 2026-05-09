@@ -15,7 +15,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const {
     countMode, bufferMinutes, defaultDuration,
-    wakeMinute, sleepMinute, highlightConflicts,
+    wakeMinute, sleepMinute, highlightConflicts, rulerShowClock,
     setCountMode, updateSetting,
   } = useSettingsStore();
 
@@ -113,6 +113,15 @@ export default function SettingsScreen() {
             <Switch
               value={highlightConflicts}
               onValueChange={v => updateSetting('highlightConflicts', v)}
+              trackColor={{ false: C.bg3, true: ac }}
+              thumbColor={C.L1}
+            />
+          </View>
+          <View style={[s.row, { marginTop: 10 }]}>
+            <Text style={s.switchLabel}>Show clock time in timeline ruler</Text>
+            <Switch
+              value={rulerShowClock}
+              onValueChange={v => updateSetting('rulerShowClock', v)}
               trackColor={{ false: C.bg3, true: ac }}
               thumbColor={C.L1}
             />

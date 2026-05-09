@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
-  DESIGN_TOKENS as C, MINUTES_IN_DAY,
+  CATEGORIES, DESIGN_TOKENS as C, MINUTES_IN_DAY,
   useCalendarStore, useTodoStore, useSettingsStore,
   useCurrentMinute, expandRepeat, minuteToTimeStr, isToday,
   today,
@@ -33,11 +33,12 @@ export default function DayScreen() {
   const unlinkTodo = useTodoStore(s => s.unlinkEventFromTodo);
   const todos      = useTodoStore(s => s.todos);
 
-  const { selectedDate, setSelectedDate, countMode, wakeMinute, sleepMinute, defaultDuration } =
+  const { selectedDate, setSelectedDate, countMode, setCountMode, wakeMinute, sleepMinute, defaultDuration } =
     useSettingsStore(s => ({
       selectedDate:    s.selectedDate,
       setSelectedDate: s.setSelectedDate,
       countMode:       s.countMode,
+      setCountMode:    s.setCountMode,
       wakeMinute:      s.wakeMinute,
       sleepMinute:     s.sleepMinute,
       defaultDuration: s.defaultDuration,
@@ -54,6 +55,17 @@ export default function DayScreen() {
 
   const totalScheduled = dayEvents.reduce((s, e) => s + e.durationMinutes, 0);
   const freeTime       = Math.max(0, (sleepMinute - wakeMinute) - totalScheduled);
+  const displayNum     = countMode === 'down' ? MINUTES_IN_DAY - currentMinute : currentMinute;
+  const dayPct         = Math.round((currentMinute / MINUTES_IN_DAY) * 100);
+  const progressPct    = countMode === 'down' ? 100 - dayPct : dayPct;
+
+  const nextEvent = todayFlag
+    ? dayEvents
+        .filter(e => e.startMinute > currentMinute)
+        .sort((a, b) => a.startMinute - b.startMinute)[0] ?? null
+    : null;
+  const minsUntilNext = nextEvent ? nextEvent.startMinute - currentMinute : null;
+  const nextCat       = nextEvent ? CATEGORIES.find(c => c.id === nextEvent.categoryId) : null;
 
   const allDatesWithEvents = [...new Set(events.map(e => e.date))];
 
@@ -101,22 +113,71 @@ export default function DayScreen() {
 
       {/* Day summary bar */}
       <View style={s.summaryBar}>
-        <Text style={s.summaryItem}>
-          <Text style={[s.summaryNum, { color: ac }]}>{totalScheduled}</Text>
-          {'m scheduled'}
-        </Text>
-        <Text style={s.summaryItem}>
-          <Text style={[s.summaryNum, { color: C.L2 }]}>{freeTime}</Text>
-          {'m free'}
-        </Text>
-        <Text style={s.summaryItem}>
-          <Text style={[s.summaryNum, { color: C.L2 }]}>{dayEvents.length}</Text>
-          {' blocks'}
-        </Text>
-        <Pressable style={s.settingsBtn} onPress={() => router.push('/settings')}>
-          <Text style={s.settingsIcon}>⚙</Text>
-        </Pressable>
+
+        {/* Master counter */}
+        <View style={s.counter}>
+          <Text style={s.counterMode}>{countMode === 'down' ? 'CNTDN' : 'CNTUP'}</Text>
+          <View style={s.counterRow}>
+            <Text style={[s.counterNum, { color: ac }]}>
+              {String(displayNum).padStart(4, '0')}
+            </Text>
+            <Text style={s.counterUnit}>{countMode === 'down' ? 'm↓' : 'm↑'}</Text>
+          </View>
+          <Text style={s.counterClock}>{minuteToTimeStr(currentMinute)}</Text>
+        </View>
+
+        {/* Progress + stats */}
+        <View style={s.middle}>
+          <View style={s.progressBg}>
+            <View style={[s.progressFill, { width: `${progressPct}%`, backgroundColor: ac }]} />
+          </View>
+          <View style={s.statsRow}>
+            <Text style={s.stat}>
+              <Text style={[s.statNum, { color: ac }]}>{totalScheduled}</Text>m sched
+            </Text>
+            <Text style={s.stat}>
+              <Text style={s.statNum}>{freeTime}</Text>m free
+            </Text>
+            <Text style={s.stat}>
+              <Text style={s.statNum}>{dayEvents.length}</Text> blk
+            </Text>
+          </View>
+        </View>
+
+        {/* Mode toggle + settings */}
+        <View style={s.controls}>
+          <View style={s.modeToggle}>
+            <Pressable
+              style={[s.modeBtn, countMode === 'up' && { backgroundColor: `${C.amber}22` }]}
+              onPress={() => setCountMode('up')}
+            >
+              <Text style={[s.modeTxt, countMode === 'up' && { color: C.amber, fontWeight: '700' }]}>▲</Text>
+            </Pressable>
+            <Pressable
+              style={[s.modeBtn, countMode === 'down' && { backgroundColor: `${C.cyan}22` }]}
+              onPress={() => setCountMode('down')}
+            >
+              <Text style={[s.modeTxt, countMode === 'down' && { color: C.cyan, fontWeight: '700' }]}>▼</Text>
+            </Pressable>
+          </View>
+          <Pressable onPress={() => router.push('/settings')}>
+            <Text style={s.settingsIcon}>⚙</Text>
+          </Pressable>
+        </View>
+
       </View>
+
+      {/* Next-block countdown banner (today only, when a future block exists) */}
+      {nextEvent && minsUntilNext !== null && (
+        <View style={[s.nextBar, { borderLeftColor: nextCat?.color ?? ac }]}>
+          <Text style={s.nextText} numberOfLines={1}>
+            <Text style={[s.nextMin, { color: ac }]}>in {minsUntilNext}m</Text>
+            {'  ·  '}
+            <Text style={[s.nextTitle, { color: nextCat?.color ?? C.L1 }]}>{nextEvent.title}</Text>
+            <Text style={s.nextTime}>{'  '}{minuteToTimeStr(nextEvent.startMinute)}</Text>
+          </Text>
+        </View>
+      )}
 
       {/* Timeline */}
       <DayGrid
@@ -185,14 +246,37 @@ export default function DayScreen() {
 const s = StyleSheet.create({
   root:        { flex: 1, backgroundColor: C.bg0 },
   summaryBar: {
-    flexDirection: 'row', alignItems: 'center', gap: 12,
-    paddingHorizontal: 14, paddingVertical: 8,
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 10, paddingVertical: 6,
     backgroundColor: C.bg1, borderBottomWidth: 1, borderBottomColor: C.border,
   },
-  summaryItem: { fontSize: 9, color: C.L3 },
-  summaryNum:  { fontSize: 11, fontWeight: '700' },
-  settingsBtn: { marginLeft: 'auto' as any, padding: 4 },
-  settingsIcon: { fontSize: 14, color: C.L3 },
+  counter:      { flexShrink: 0 },
+  counterMode:  { fontSize: 6, color: C.L4, letterSpacing: 1.5, marginBottom: 1 },
+  counterRow:   { flexDirection: 'row', alignItems: 'baseline', gap: 2 },
+  counterNum:   { fontSize: 20, fontWeight: '900', letterSpacing: -0.5 },
+  counterUnit:  { fontSize: 7, color: C.L3 },
+  counterClock: { fontSize: 7, color: C.L2, marginTop: 1 },
+  middle:       { flex: 1, gap: 4 },
+  progressBg:   { height: 3, backgroundColor: C.bg3, borderRadius: 2, overflow: 'hidden' },
+  progressFill: { height: 3, borderRadius: 2 },
+  statsRow:     { flexDirection: 'row', gap: 8 },
+  stat:         { fontSize: 8, color: C.L3 },
+  statNum:      { fontSize: 9, fontWeight: '700', color: C.L2 },
+  controls:     { flexShrink: 0, alignItems: 'flex-end', gap: 4 },
+  modeToggle:   { flexDirection: 'row', borderRadius: 3, borderWidth: 1, borderColor: C.border, overflow: 'hidden' },
+  modeBtn:      { paddingHorizontal: 6, paddingVertical: 3 },
+  modeTxt:      { fontSize: 9, color: C.L3 },
+  settingsIcon: { fontSize: 13, color: C.L3, padding: 2 },
+  nextBar: {
+    paddingHorizontal: 14, paddingVertical: 5,
+    backgroundColor: C.bg1,
+    borderLeftWidth: 3,
+    borderBottomWidth: 1, borderBottomColor: C.border,
+  },
+  nextText:  { fontSize: 10, color: C.L2 },
+  nextMin:   { fontWeight: '900' },
+  nextTitle: { fontWeight: '700' },
+  nextTime:  { color: C.L3, fontSize: 9 },
   fab: {
     position: 'absolute', bottom: 16, right: 16,
     paddingHorizontal: 16, paddingVertical: 9,
