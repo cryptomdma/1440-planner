@@ -20,6 +20,7 @@ interface SettingsState {
   wakeMinute:         number;
   sleepMinute:        number;
   highlightConflicts: boolean;
+  rulerShowClock:     boolean;
   // selectedDate is NOT persisted — always resets to today on cold start
   selectedDate: string;
 
@@ -40,6 +41,7 @@ export const useSettingsStore = create<SettingsState>()(
       wakeMinute:         360,   // 6 AM
       sleepMinute:        1320,  // 10 PM
       highlightConflicts: true,
+      rulerShowClock:     true,
       selectedDate:       today(),
 
       setCountMode:    (m) => set({ countMode: m }),
@@ -57,6 +59,7 @@ export const useSettingsStore = create<SettingsState>()(
         wakeMinute:         state.wakeMinute,
         sleepMinute:        state.sleepMinute,
         highlightConflicts: state.highlightConflicts,
+        rulerShowClock:     state.rulerShowClock,
       }),
     }
   )

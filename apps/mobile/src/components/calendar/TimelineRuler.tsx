@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import { DESIGN_TOKENS as C, PPM, MINUTES_IN_DAY, minuteToTimeStr } from '@1440/core';
+import { DESIGN_TOKENS as C, PPM, MINUTES_IN_DAY, minuteToTimeStr, useSettingsStore } from '@1440/core';
 
 const HOURS = Array.from({ length: 25 }, (_, i) => i); // 0–24 (midnight bookends)
 const QTRS  = Array.from({ length: 96 }, (_, i) => i); // 96 quarter-hour ticks
@@ -9,9 +9,13 @@ interface Props {
   countMode: 'up' | 'down';
 }
 
+const MONO = Platform.select({ ios: 'Courier New', default: 'monospace' });
+
 export default function TimelineRuler({ countMode }: Props) {
-  const label = (min: number) =>
-    countMode === 'down' ? String(MINUTES_IN_DAY - min) : minuteToTimeStr(min);
+  const rulerShowClock = useSettingsStore(s => s.rulerShowClock);
+
+  const primaryLabel = (min: number) =>
+    countMode === 'down' ? String(MINUTES_IN_DAY - min) : String(min);
 
   return (
     <View style={s.root} pointerEvents="none">
@@ -36,8 +40,13 @@ export default function TimelineRuler({ countMode }: Props) {
       })}
       {/* Hour labels */}
       {HOURS.map(h => (
-        <View key={h} style={[s.hourRow, { top: h * 60 * PPM - 6 }]}>
-          <Text style={s.hourLabel}>{label(h * 60)}</Text>
+        <View key={h} style={[s.hourRow, { top: h * 60 * PPM - 8 }]}>
+          <View style={s.labelStack}>
+            <Text style={s.primaryLabel}>{primaryLabel(h * 60)}</Text>
+            {rulerShowClock && (
+              <Text style={s.clockLabel}>{minuteToTimeStr(h * 60)}</Text>
+            )}
+          </View>
           <View style={s.hrLine} />
         </View>
       ))}
@@ -54,13 +63,21 @@ const s = StyleSheet.create({
   },
   hourRow: {
     position: 'absolute', left: 0, right: 0,
-    flexDirection: 'row', alignItems: 'center', height: 12,
+    flexDirection: 'row', alignItems: 'center', height: 16,
   },
-  hourLabel: {
+  labelStack: {
     width: RULER_W - 14,
-    fontSize: 8, color: C.L3,
-    fontFamily: Platform.select({ ios: 'Courier New', default: 'monospace' }),
-    textAlign: 'right', paddingRight: 4,
+    alignItems: 'flex-end',
+    paddingRight: 4,
+  },
+  primaryLabel: {
+    fontSize: 8, fontWeight: '700', color: C.L2,
+    fontFamily: MONO,
+  },
+  clockLabel: {
+    fontSize: 6, color: C.L4,
+    fontFamily: MONO,
+    marginTop: 1,
   },
   hrLine: {
     flex: 1, height: 1, backgroundColor: C.gridHr,
