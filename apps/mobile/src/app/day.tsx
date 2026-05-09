@@ -109,6 +109,7 @@ export default function DayScreen() {
         selectedDate={selectedDate}
         datesWithEvents={allDatesWithEvents}
         onSelect={setSelectedDate}
+        accentColor={ac}
       />
 
       {/* Day summary bar */}
