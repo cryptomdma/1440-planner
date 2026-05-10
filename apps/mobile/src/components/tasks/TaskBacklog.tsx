@@ -36,6 +36,7 @@ export default function TaskBacklog({ pendingTodoId, onPick }: Props) {
 
   const [showAdd,    setShowAdd]    = useState(false);
   const [newTitle,   setNewTitle]   = useState('');
+  const [newNotes,   setNewNotes]   = useState('');
   const [newDur,     setNewDur]     = useState(30);
   const [newCat,     setNewCat]     = useState<CategoryId>('deep');
   const [newPri,     setNewPri]     = useState<Priority>('med');
@@ -54,9 +55,10 @@ export default function TaskBacklog({ pendingTodoId, onPick }: Props) {
       priority:        newPri,
       categoryId:      newCat,
       durationMinutes: newDur,
+      notes:           newNotes.trim() || undefined,
       status:          'pending',
     });
-    setNewTitle(''); setNewDur(30); setNewCat('deep'); setNewPri('med');
+    setNewTitle(''); setNewNotes(''); setNewDur(30); setNewCat('deep'); setNewPri('med');
     setShowAdd(false);
   };
 
@@ -73,6 +75,7 @@ export default function TaskBacklog({ pendingTodoId, onPick }: Props) {
       startMinute:     start,
       durationMinutes: todo.durationMinutes,
       categoryId:      todo.categoryId,
+      notes:           todo.notes,
       fromTodo:        true,
       linkedTodoId:    todo.id,
     };
@@ -90,6 +93,7 @@ export default function TaskBacklog({ pendingTodoId, onPick }: Props) {
         startMinute,
         durationMinutes: todo.durationMinutes,
         categoryId:      todo.categoryId,
+        notes:           todo.notes,
         fromTodo:        true,
         linkedTodoId:    todo.id,
       };
@@ -132,6 +136,16 @@ export default function TaskBacklog({ pendingTodoId, onPick }: Props) {
                 placeholder="Task title…"
                 placeholderTextColor={C.L3}
                 autoFocus
+              />
+              <TextInput
+                style={[s.addInput, s.notesInput]}
+                value={newNotes}
+                onChangeText={setNewNotes}
+                placeholder="Notes (optional)…"
+                placeholderTextColor={C.L3}
+                multiline
+                numberOfLines={2}
+                textAlignVertical="top"
               />
               <View style={s.formRow}>
                 <View style={{ flex: 1 }}>
@@ -212,6 +226,7 @@ const s = StyleSheet.create({
     backgroundColor: C.bg0, borderWidth: 1, borderColor: C.border,
     borderRadius: 4, color: C.L1, fontSize: 13,
   },
+  notesInput: { minHeight: 48, fontSize: 11, paddingTop: 8 },
   formRow:     { flexDirection: 'row', gap: 10 },
   lbl:         { fontSize: 8, color: C.L3, letterSpacing: 1.5, marginBottom: 4 },
   pillRow:     { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },

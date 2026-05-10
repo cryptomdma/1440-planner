@@ -44,6 +44,9 @@ export default function TodoRow({ todo, isPicking, onDone, onDelete, onSchedule,
         >
           {todo.title}
         </Text>
+        {!!todo.notes && (
+          <Text style={s.notes} numberOfLines={1}>{todo.notes}</Text>
+        )}
         <View style={s.tags}>
           <Text style={[s.tag, { color: cat?.color, backgroundColor: cat?.bg }]}>{cat?.label}</Text>
           <Text style={[s.priTag, { color: pri?.color }]}>{pri?.label}</Text>
@@ -108,6 +111,7 @@ const s = StyleSheet.create({
     marginBottom: 4,
   },
   titleDone: { color: C.L3, textDecorationLine: 'line-through' },
+  notes:     { fontSize: 10, color: C.L3, marginBottom: 4, fontStyle: 'italic' },
   tags:      { flexDirection: 'row', flexWrap: 'wrap', gap: 6, alignItems: 'center' },
   tag:       { fontSize: 9, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 3 },
   priTag:    { fontSize: 9, fontWeight: '600' },
