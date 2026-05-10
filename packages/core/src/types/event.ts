@@ -44,6 +44,7 @@ export interface CalendarEvent {
   startMinute: number;      // 0–1439
   durationMinutes: number;
   categoryId: CategoryId;
+  notes?: string;
   repeat?: RepeatConfig;
   seriesId?: string;        // links all occurrences of a repeat series
   linkedTodoId?: string;

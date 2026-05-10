@@ -10,5 +10,6 @@ export interface Todo {
   categoryId: CategoryId;
   durationMinutes: number;
   status: TodoStatus;
+  notes?: string;
   linkedEventId?: string;
 }

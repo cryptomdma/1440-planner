@@ -86,6 +86,7 @@ function AddForm(props: AddMode & { onClose: () => void }) {
   const [start,      setStart]      = useState(initialStart ?? 0);
   const [duration,   setDuration]   = useState(defaultDuration ?? 60);
   const [categoryId, setCategoryId] = useState<CategoryId>('deep');
+  const [notes,      setNotes]      = useState('');
   const [repeat,     setRepeat]     = useState<RepeatConfig>(BLANK_REPEAT);
   const [showRepeat, setShowRepeat] = useState(false);
 
@@ -101,6 +102,7 @@ function AddForm(props: AddMode & { onClose: () => void }) {
       startMinute:     start,
       durationMinutes: duration,
       categoryId,
+      notes:           notes.trim() || undefined,
       repeat,
       fromTodo:        false,
     };
@@ -128,6 +130,21 @@ function AddForm(props: AddMode & { onClose: () => void }) {
           placeholder={cat?.label}
           placeholderTextColor={C.L3}
           autoFocus
+        />
+      </View>
+
+      {/* Notes */}
+      <View>
+        <Text style={s.lbl}>NOTES</Text>
+        <TextInput
+          style={[s.textInput, s.notesInput]}
+          value={notes}
+          onChangeText={setNotes}
+          placeholder="Optional notes…"
+          placeholderTextColor={C.L3}
+          multiline
+          numberOfLines={3}
+          textAlignVertical="top"
         />
       </View>
 
@@ -205,6 +222,7 @@ function EditForm(props: EditMode & { onClose: () => void }) {
   const [duration,   setDuration]   = useState(() => event?.durationMinutes ?? 60);
   const [categoryId, setCategoryId] = useState(() => event?.categoryId ?? 'deep' as const);
   const [date,       setDate]       = useState(() => event?.date ?? today());
+  const [notes,      setNotes]      = useState(() => event?.notes ?? '');
 
   useEffect(() => {
     if (!event) return;
@@ -213,6 +231,7 @@ function EditForm(props: EditMode & { onClose: () => void }) {
     setDuration(event.durationMinutes);
     setCategoryId(event.categoryId);
     setDate(event.date);
+    setNotes(event.notes ?? '');
   }, [event?.id]);
 
   const commit = (patch: Partial<CalendarEvent>) => onUpdate(event.id, patch);
@@ -247,6 +266,22 @@ function EditForm(props: EditMode & { onClose: () => void }) {
           onBlur={() => commit({ title: title.trim() || cat?.label || 'Block' })}
           placeholder={cat?.label}
           placeholderTextColor={C.L3}
+        />
+      </View>
+
+      {/* Notes */}
+      <View>
+        <Text style={s.lbl}>NOTES</Text>
+        <TextInput
+          style={[s.textInput, s.notesInput]}
+          value={notes}
+          onChangeText={setNotes}
+          onBlur={() => commit({ notes: notes.trim() || undefined })}
+          placeholder="Optional notes…"
+          placeholderTextColor={C.L3}
+          multiline
+          numberOfLines={3}
+          textAlignVertical="top"
         />
       </View>
 
@@ -347,6 +382,7 @@ const s = StyleSheet.create({
     backgroundColor: C.bg0, borderWidth: 1, borderColor: C.border,
     borderRadius: 4, color: C.L1, fontSize: 12,
   },
+  notesInput:   { minHeight: 64, paddingTop: 8 },
   grid2:        { flexDirection: 'row', gap: 10 },
   quickBtn: {
     paddingHorizontal: 8, paddingVertical: 3,
