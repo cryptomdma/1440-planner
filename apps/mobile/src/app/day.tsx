@@ -2,12 +2,14 @@ import React, { useState, useCallback } from 'react';
 import {
   View, Text, Pressable, StyleSheet, SafeAreaView,
 } from 'react-native';
+import { PanGestureHandler, State } from 'react-native-gesture-handler';
+import type { PanGestureHandlerStateChangeEvent } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import {
   CATEGORIES, DESIGN_TOKENS as C, MINUTES_IN_DAY,
   useCalendarStore, useTodoStore, useSettingsStore,
   useCurrentMinute, expandRepeat, minuteToTimeStr, isToday,
-  today,
+  today, dateAddDays,
 } from '@1440/core';
 import type { CalendarEvent, Todo } from '@1440/core';
 import DateStrip   from '../components/calendar/DateStrip';
@@ -102,6 +104,15 @@ export default function DayScreen() {
     setUndoEntry(null);
   };
 
+  // Swipe left → next day, swipe right → prev day.
+  // failOffsetY keeps vertical scrolling inside DayGrid working normally.
+  const handleSwipe = useCallback((e: PanGestureHandlerStateChangeEvent) => {
+    if (e.nativeEvent.state !== State.END) return;
+    const { translationX, translationY } = e.nativeEvent;
+    if (Math.abs(translationX) < 60 || Math.abs(translationX) < Math.abs(translationY)) return;
+    setSelectedDate(dateAddDays(selectedDate, translationX < 0 ? 1 : -1));
+  }, [selectedDate, setSelectedDate]);
+
   return (
     <View style={s.root}>
       {/* Date strip */}
@@ -180,19 +191,29 @@ export default function DayScreen() {
         </View>
       )}
 
-      {/* Timeline */}
-      <DayGrid
-        events={dayEvents}
-        selectedEvent={selEv}
-        currentMinute={currentMinute}
-        countMode={countMode}
-        accentColor={ac}
-        wakeMinute={wakeMinute}
-        sleepMinute={sleepMinute}
-        isToday={todayFlag}
-        onSelectEvent={ev => setSelEv(prev => prev?.id === ev.id ? null : ev)}
-        onLongPress={handleLongPress}
-      />
+      {/* Timeline — wrapped in a gesture handler for left/right date swiping.
+          activeOffsetX requires 45px horizontal movement before activating.
+          failOffsetY yields to vertical scroll if 15px vertical detected first. */}
+      <PanGestureHandler
+        onHandlerStateChange={handleSwipe}
+        activeOffsetX={[-45, 45]}
+        failOffsetY={[-15, 15]}
+      >
+        <View style={{ flex: 1 }}>
+          <DayGrid
+            events={dayEvents}
+            selectedEvent={selEv}
+            currentMinute={currentMinute}
+            countMode={countMode}
+            accentColor={ac}
+            wakeMinute={wakeMinute}
+            sleepMinute={sleepMinute}
+            isToday={todayFlag}
+            onSelectEvent={ev => setSelEv(prev => prev?.id === ev.id ? null : ev)}
+            onLongPress={handleLongPress}
+          />
+        </View>
+      </PanGestureHandler>
 
       {/* Floating add button */}
       <Pressable

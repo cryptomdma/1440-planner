@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, Pressable, FlatList, StyleSheet,
-  Platform, UIManager, LayoutAnimation,
+  Platform, UIManager, LayoutAnimation, useWindowDimensions,
 } from 'react-native';
 import { DESIGN_TOKENS as C, dateAddDays, formatDateDisplay, today } from '@1440/core';
 
@@ -13,9 +13,8 @@ const DOW    = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTHS = ['January','February','March','April','May','June',
                 'July','August','September','October','November','December'];
 
-const ITEM_W  = 48;
 const RANGE   = 365;
-const TOTAL   = RANGE * 2 + 1; // 731 days, today is at index RANGE
+const TOTAL   = RANGE * 2 + 1; // 731 days, today at MID_IDX
 const MID_IDX = RANGE;
 
 interface Props {
@@ -36,9 +35,9 @@ function buildMonthCells(year: number, month: number): (string | null)[] {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const cells: (string | null)[] = Array(firstDow).fill(null);
   for (let d = 1; d <= daysInMonth; d++) {
-    const mm = String(month + 1).padStart(2, '0');
-    const dd = String(d).padStart(2, '0');
-    cells.push(`${year}-${mm}-${dd}`);
+    cells.push(
+      `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    );
   }
   while (cells.length % 7 !== 0) cells.push(null);
   return cells;
@@ -46,17 +45,21 @@ function buildMonthCells(year: number, month: number): (string | null)[] {
 
 function idxForDate(todayStr: string, date: string): number {
   const t = new Date(todayStr + 'T12:00:00').getTime();
-  const d = new Date(date    + 'T12:00:00').getTime();
+  const d = new Date(date     + 'T12:00:00').getTime();
   return MID_IDX + Math.round((d - t) / 86400000);
 }
 
 export default function DateStrip({ selectedDate, datesWithEvents, onSelect, accentColor = C.amber }: Props) {
-  const listRef    = useRef<FlatList>(null);
-  const didInit    = useRef(false);
-  const viewportW  = useRef(0); // FlatList visible width, captured in onLayout
-  const todayStr   = useMemo(() => today(), []);
-  const evSet      = useMemo(() => new Set(datesWithEvents), [datesWithEvents]);
-  const days       = useMemo(() => buildDays(todayStr), [todayStr]);
+  const { width: screenW } = useWindowDimensions();
+  // Exactly 7 cells fill the screen; recomputes on orientation change
+  const itemW = Math.floor(screenW / 7);
+
+  const listRef   = useRef<FlatList>(null);
+  // Initialize with screenW immediately so scrollTo math is correct on first call
+  const viewportW = useRef(screenW);
+  const todayStr  = useMemo(() => today(), []);
+  const evSet     = useMemo(() => new Set(datesWithEvents), [datesWithEvents]);
+  const days      = useMemo(() => buildDays(todayStr), [todayStr]);
 
   const [expanded,  setExpanded]  = useState(false);
   const [gridMonth, setGridMonth] = useState(() => {
@@ -64,31 +67,38 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
     return { year: d.getFullYear(), month: d.getMonth() };
   });
 
-  // Pixel-accurate centering: offset so the target item sits mid-viewport.
-  // scrollToOffset never needs items to be rendered, unlike scrollToIndex.
-  const scrollTo = useCallback((date: string, animated: boolean) => {
-    const idx    = Math.max(0, Math.min(TOTAL - 1, idxForDate(todayStr, date)));
-    const offset = Math.max(0, idx * ITEM_W - (viewportW.current - ITEM_W) / 2);
-    listRef.current?.scrollToOffset({ offset, animated });
-  }, [todayStr]);
+  // Pixel offset that centers `date` in the viewport
+  const offsetForDate = useCallback((date: string) => {
+    const idx = Math.max(0, Math.min(TOTAL - 1, idxForDate(todayStr, date)));
+    return Math.max(0, idx * itemW - (viewportW.current - itemW) / 2);
+  }, [todayStr, itemW]);
 
-  // Scroll strip to selected date whenever it changes
+  const scrollTo = useCallback((date: string, animated: boolean) => {
+    listRef.current?.scrollToOffset({ offset: offsetForDate(date), animated });
+  }, [offsetForDate]);
+
+  // contentOffset seeds the FlatList at the correct position before first paint —
+  // no onLayout round-trip needed for the initial render.
+  const initialOffset = useMemo(
+    () => ({ x: offsetForDate(selectedDate), y: 0 }),
+    // intentionally empty: only seed once at mount
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  // Keep list centered on the selected date whenever it changes
   useEffect(() => {
     scrollTo(selectedDate, true);
     const d = new Date(selectedDate + 'T12:00:00');
     setGridMonth({ year: d.getFullYear(), month: d.getMonth() });
   }, [selectedDate]);
 
-  // Capture viewport width then center once, no animation
+  // Keep viewportW in sync after orientation changes
   const handleLayout = useCallback((e: any) => {
     viewportW.current = e.nativeEvent.layout.width;
-    if (didInit.current) return;
-    didInit.current = true;
-    scrollTo(selectedDate, false);
-  }, [selectedDate, scrollTo]);
+  }, []);
 
-  const goToToday = useCallback(() => onSelect(todayStr), [todayStr, onSelect]);
-
+  const goToToday    = useCallback(() => onSelect(todayStr), [todayStr, onSelect]);
   const toggleExpanded = useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded(e => !e);
@@ -98,7 +108,6 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
     setGridMonth(({ year, month }) =>
       month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 }
     ), []);
-
   const nextMonth = useCallback(() =>
     setGridMonth(({ year, month }) =>
       month === 11 ? { year: year + 1, month: 0 } : { year, month: month + 1 }
@@ -109,20 +118,22 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
     [gridMonth.year, gridMonth.month],
   );
 
+  const isNotToday = selectedDate !== todayStr;
+
   const renderItem = useCallback(({ item }: { item: { date: string } }) => {
-    const dt      = new Date(item.date + 'T12:00:00');
-    const active  = item.date === selectedDate;
-    const isT     = item.date === todayStr;
-    const hasEvs  = evSet.has(item.date);
+    const dt     = new Date(item.date + 'T12:00:00');
+    const active = item.date === selectedDate;
+    const isT    = item.date === todayStr;
+    const hasEvs = evSet.has(item.date);
     return (
       <Pressable
-        style={[s.dayItem, active && { backgroundColor: `${accentColor}22` }]}
+        style={[s.dayItem, { width: itemW }, active && { backgroundColor: `${accentColor}22` }]}
         onPress={() => onSelect(item.date)}
       >
         <Text style={[s.dow, active && { color: C.L1 }]}>{DOW[dt.getDay()]}</Text>
         <Text style={[
           s.dayNum,
-          isT   && { color: accentColor },
+          isT    && { color: accentColor },
           active && { color: accentColor, fontWeight: '900' },
         ]}>
           {dt.getDate()}
@@ -133,34 +144,38 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
         ]} />
       </Pressable>
     );
-  }, [selectedDate, todayStr, accentColor, onSelect, evSet]);
+  }, [selectedDate, todayStr, accentColor, onSelect, evSet, itemW]);
 
   const getItemLayout = useCallback((_: any, i: number) => ({
-    length: ITEM_W, offset: ITEM_W * i, index: i,
-  }), []);
-
-  const isNotToday = selectedDate !== todayStr;
+    length: itemW, offset: itemW * i, index: i,
+  }), [itemW]);
 
   return (
     <View style={s.root}>
 
-      {/* Horizontal date strip */}
-      <View style={s.stripRow}>
-        <FlatList
-          ref={listRef}
-          data={days}
-          keyExtractor={d => d.date}
-          renderItem={renderItem}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          getItemLayout={getItemLayout}
-          initialScrollIndex={MID_IDX}
-          onLayout={handleLayout}
-          onScrollToIndexFailed={() => {}}
-          extraData={[selectedDate, accentColor, evSet]}
-          removeClippedSubviews
-          style={s.list}
-        />
+      {/* Horizontal date strip — exactly 7 cells wide */}
+      <FlatList
+        ref={listRef}
+        data={days}
+        keyExtractor={d => d.date}
+        renderItem={renderItem}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        getItemLayout={getItemLayout}
+        contentOffset={initialOffset}
+        onLayout={handleLayout}
+        onScrollToIndexFailed={() => {}}
+        extraData={[selectedDate, accentColor, evSet, itemW]}
+        removeClippedSubviews
+        initialNumToRender={9}
+      />
+
+      {/* Full date label row: expand toggle on left, TODAY button on right */}
+      <View style={s.dateRow}>
+        <Pressable style={s.dateLabelBtn} onPress={toggleExpanded}>
+          <Text style={s.fullDate}>{formatDateDisplay(selectedDate)}</Text>
+          <Text style={[s.chevron, { color: accentColor }]}>{expanded ? '▲' : '▼'}</Text>
+        </Pressable>
         {isNotToday && (
           <Pressable
             style={[s.todayBtn, { borderColor: accentColor }]}
@@ -172,37 +187,23 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
         )}
       </View>
 
-      {/* Full date label + expand chevron */}
-      <Pressable style={s.dateRow} onPress={toggleExpanded}>
-        <Text style={s.fullDate}>{formatDateDisplay(selectedDate)}</Text>
-        <Text style={[s.chevron, { color: accentColor }]}>{expanded ? '▲' : '▼'}</Text>
-      </Pressable>
-
       {/* Month grid (expanded) */}
       {expanded && (
         <View style={s.monthGrid}>
-
-          {/* Month nav header */}
           <View style={s.monthHeader}>
             <Pressable onPress={prevMonth} hitSlop={10}>
               <Text style={s.monthNav}>‹</Text>
             </Pressable>
-            <Text style={s.monthTitle}>
-              {MONTHS[gridMonth.month]} {gridMonth.year}
-            </Text>
+            <Text style={s.monthTitle}>{MONTHS[gridMonth.month]} {gridMonth.year}</Text>
             <Pressable onPress={nextMonth} hitSlop={10}>
               <Text style={s.monthNav}>›</Text>
             </Pressable>
           </View>
 
-          {/* Day-of-week column headers */}
           <View style={s.gridRow}>
-            {DOW.map((d, i) => (
-              <Text key={i} style={s.gridDow}>{d}</Text>
-            ))}
+            {DOW.map((d, i) => <Text key={i} style={s.gridDow}>{d}</Text>)}
           </View>
 
-          {/* Calendar rows */}
           {Array.from({ length: monthCells.length / 7 }, (_, row) => (
             <View key={row} style={s.gridRow}>
               {monthCells.slice(row * 7, row * 7 + 7).map((date, col) => {
@@ -214,10 +215,7 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
                 return (
                   <Pressable
                     key={col}
-                    style={[
-                      s.gridCell,
-                      active && { backgroundColor: `${accentColor}33`, borderRadius: 4 },
-                    ]}
+                    style={[s.gridCell, active && { backgroundColor: `${accentColor}33`, borderRadius: 4 }]}
                     onPress={() => { onSelect(date); toggleExpanded(); }}
                   >
                     <Text style={[
@@ -242,34 +240,34 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
 }
 
 const s = StyleSheet.create({
-  root:     { backgroundColor: C.bg1, borderBottomWidth: 1, borderBottomColor: C.border },
-  stripRow: { flexDirection: 'row', alignItems: 'center' },
-  list:     { flex: 1 },
-  dayItem:  { width: ITEM_W, alignItems: 'center', paddingVertical: 8, borderRadius: 6 },
-  dow:      { fontSize: 9, color: C.L3, fontWeight: '600', letterSpacing: 0.5, marginBottom: 3 },
-  dayNum:   { fontSize: 15, color: C.L3, fontWeight: '700' },
-  dot:      { width: 4, height: 4, borderRadius: 2, marginTop: 3, backgroundColor: 'transparent' },
+  root:         { backgroundColor: C.bg1, borderBottomWidth: 1, borderBottomColor: C.border },
+  dayItem:      { alignItems: 'center', paddingVertical: 8, borderRadius: 6 },
+  dow:          { fontSize: 9, color: C.L3, fontWeight: '600', letterSpacing: 0.5, marginBottom: 3 },
+  dayNum:       { fontSize: 15, color: C.L3, fontWeight: '700' },
+  dot:          { width: 4, height: 4, borderRadius: 2, marginTop: 3, backgroundColor: 'transparent' },
+
+  dateRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: 10, paddingVertical: 3,
+  },
+  dateLabelBtn: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
+  fullDate:     { fontSize: 9, color: C.L3, letterSpacing: 1.5 },
+  chevron:      { fontSize: 8, marginLeft: 6 },
   todayBtn: {
-    marginRight: 8, paddingHorizontal: 8, paddingVertical: 4,
+    paddingHorizontal: 8, paddingVertical: 4,
     borderRadius: 4, borderWidth: 1,
   },
-  todayTxt: { fontSize: 8, fontWeight: '700', letterSpacing: 1 },
-  dateRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 3,
-  },
-  fullDate: { fontSize: 9, color: C.L3, letterSpacing: 1.5 },
-  chevron:  { fontSize: 8, marginLeft: 6 },
+  todayTxt:     { fontSize: 8, fontWeight: '700', letterSpacing: 1 },
 
-  monthGrid: { paddingHorizontal: 6, paddingBottom: 8, borderTopWidth: 1, borderTopColor: C.border },
+  monthGrid:    { paddingHorizontal: 6, paddingBottom: 8, borderTopWidth: 1, borderTopColor: C.border },
   monthHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 6, paddingHorizontal: 8,
   },
-  monthTitle: { fontSize: 10, color: C.L2, fontWeight: '700', letterSpacing: 0.5 },
-  monthNav:   { fontSize: 18, color: C.L3, paddingHorizontal: 6 },
-  gridRow:    { flexDirection: 'row' },
-  gridDow:    { flex: 1, textAlign: 'center', fontSize: 8, color: C.L3, fontWeight: '600', paddingVertical: 4 },
-  gridCell:   { flex: 1, alignItems: 'center', paddingVertical: 5 },
-  gridNum:    { fontSize: 11, color: C.L2, fontWeight: '600' },
+  monthTitle:   { fontSize: 10, color: C.L2, fontWeight: '700', letterSpacing: 0.5 },
+  monthNav:     { fontSize: 18, color: C.L3, paddingHorizontal: 6 },
+  gridRow:      { flexDirection: 'row' },
+  gridDow:      { flex: 1, textAlign: 'center', fontSize: 8, color: C.L3, fontWeight: '600', paddingVertical: 4 },
+  gridCell:     { flex: 1, alignItems: 'center', paddingVertical: 5 },
+  gridNum:      { fontSize: 11, color: C.L2, fontWeight: '600' },
 });
