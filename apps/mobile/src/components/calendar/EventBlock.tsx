@@ -193,22 +193,7 @@ export default function EventBlock({ event, layout, selected, onSelect, onUpdate
             },
           ]}
         >
-          {/* Top resize knob */}
-          {showKnobs && (
-            <PanGestureHandler
-              ref={topKnobRef}
-              activeOffsetY={[-4, 4]}
-              failOffsetX={[-10, 10]}
-              onGestureEvent={onTopKnobGesture}
-              onHandlerStateChange={onTopKnobStateChange}
-            >
-              <View style={s.knobHitTop}>
-                <View style={[s.knobBar, { backgroundColor: cat?.color ?? C.L3 }]} />
-              </View>
-            </PanGestureHandler>
-          )}
-
-          {/* Block content — tap handled by inner Pressable */}
+          {/* Block content — fills full height; knobs float above it */}
           <Pressable
             style={s.content}
             onPress={() => {
@@ -232,7 +217,20 @@ export default function EventBlock({ event, layout, selected, onSelect, onUpdate
             )}
           </Pressable>
 
-          {/* Bottom resize knob */}
+          {/* Knobs: absolutely positioned so they never squeeze the content */}
+          {showKnobs && (
+            <PanGestureHandler
+              ref={topKnobRef}
+              activeOffsetY={[-4, 4]}
+              failOffsetX={[-10, 10]}
+              onGestureEvent={onTopKnobGesture}
+              onHandlerStateChange={onTopKnobStateChange}
+            >
+              <View style={s.knobHitTop}>
+                <View style={[s.knobBar, { backgroundColor: cat?.color ?? C.L3 }]} />
+              </View>
+            </PanGestureHandler>
+          )}
           {showKnobs && (
             <PanGestureHandler
               ref={botKnobRef}
@@ -272,12 +270,16 @@ const s = StyleSheet.create({
     elevation:       2,
   },
   knobHitTop: {
+    position:       'absolute',
+    top:            0, left: 0, right: 0,
     height:         KNOB_H,
     alignItems:     'center',
     justifyContent: 'flex-start',
     paddingTop:     4,
   },
   knobHitBot: {
+    position:       'absolute',
+    bottom:         0, left: 0, right: 0,
     height:         KNOB_H,
     alignItems:     'center',
     justifyContent: 'flex-end',
@@ -286,7 +288,7 @@ const s = StyleSheet.create({
   knobBar: {
     width: 30, height: 3,
     borderRadius: 2,
-    opacity: 0.7,
+    opacity: 0.6,
   },
   content: {
     flex:         1,
