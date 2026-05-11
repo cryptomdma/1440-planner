@@ -211,6 +211,7 @@ export default function DayScreen() {
             isToday={todayFlag}
             onSelectEvent={ev => setSelEv(prev => prev?.id === ev.id ? null : ev)}
             onLongPress={handleLongPress}
+            onUpdateEvent={updateEvent}
           />
         </View>
       </PanGestureHandler>

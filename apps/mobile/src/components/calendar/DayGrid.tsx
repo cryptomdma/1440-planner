@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, ScrollView, Text, Pressable, StyleSheet, Platform,
 } from 'react-native';
@@ -11,27 +11,29 @@ import EventBlock from './EventBlock';
 import TimelineRuler from './TimelineRuler';
 
 interface Props {
-  events:        CalendarEvent[];
-  selectedEvent: CalendarEvent | null;
-  currentMinute: number;
-  countMode:     'up' | 'down';
-  accentColor:   string;
-  wakeMinute:    number;
-  sleepMinute:   number;
-  isToday:       boolean;
-  onSelectEvent: (ev: CalendarEvent) => void;
-  onLongPress:   (startMinute: number) => void;
+  events:          CalendarEvent[];
+  selectedEvent:   CalendarEvent | null;
+  currentMinute:   number;
+  countMode:       'up' | 'down';
+  accentColor:     string;
+  wakeMinute:      number;
+  sleepMinute:     number;
+  isToday:         boolean;
+  onSelectEvent:   (ev: CalendarEvent) => void;
+  onLongPress:     (startMinute: number) => void;
+  onUpdateEvent:   (id: string, patch: Partial<CalendarEvent>) => void;
 }
 
 const TOTAL_HEIGHT = MINUTES_IN_DAY * PPM;
 
 export default function DayGrid({
   events, selectedEvent, currentMinute, countMode, accentColor,
-  wakeMinute, sleepMinute, isToday, onSelectEvent, onLongPress,
+  wakeMinute, sleepMinute, isToday, onSelectEvent, onLongPress, onUpdateEvent,
 }: Props) {
   const scrollRef      = useRef<ScrollView>(null);
   const didInitScroll  = useRef(false);
   const layout         = computeLayout(events);
+  const [isDraggingAny, setIsDraggingAny] = useState(false);
 
   const nowY = Math.max(0, currentMinute * PPM - 250);
 
@@ -50,6 +52,7 @@ export default function DayGrid({
   }, [isToday, nowY]);
 
   const handleLongPress = (e: any) => {
+    if (isDraggingAny) return;
     const y   = e.nativeEvent.locationY;
     const min = Math.max(0, Math.min(MINUTES_IN_DAY - BLOCK_SIZE, Math.round(y / PPM / BLOCK_SIZE) * BLOCK_SIZE));
     onLongPress(min);
@@ -97,6 +100,8 @@ export default function DayGrid({
             layout={layout[ev.id] ?? { column: 0, totalColumns: 1 }}
             selected={selectedEvent?.id === ev.id}
             onSelect={onSelectEvent}
+            onUpdate={onUpdateEvent}
+            onDragActive={active => setIsDraggingAny(active)}
           />
         ))}
       </Pressable>
