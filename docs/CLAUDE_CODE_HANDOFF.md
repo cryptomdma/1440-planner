@@ -540,12 +540,17 @@ Gate entirely behind `EXPO_PUBLIC_SUPABASE_URL` — if empty, skip all sync sile
 
 ## Phase 4 — Polish Checklist
 
+> Status verified 2026-09-22 by grepping `apps/mobile/src`. Ticks below reflect what is
+> actually in the tree, not what was intended.
+
 ```
 App store readiness:
 [ ] Haptic feedback on block creation (expo-haptics, medium impact)
+    — Haptics currently fire only in EventBlock.tsx (drag/resize), not on creation
 [ ] Haptic on undo confirm (light impact)
-[ ] Block drag-to-reschedule (long-press + PanGestureHandler on EventBlock)
+[x] Block drag-to-reschedule (long-press + PanGestureHandler on EventBlock)  — d0d0f14
 [ ] Swipe left on EventBlock → delete with undo toast
+    — delete + 4s undo exists on the Day screen, but not via swipe
 [ ] EditScope action sheet for series events (instance / this_and_future / all)
 [ ] Empty state illustrations (day, tasks, watch — each view)
 [ ] Onboarding flow: 3 screens explaining the 1440 concept before first use
@@ -553,6 +558,7 @@ App store readiness:
 [ ] Accessibility: accessibilityLabel on all interactive elements
 [ ] accessibilityRole="button" on all touchables
 [ ] VoiceOver/TalkBack ordering matches visual order
+    — zero accessibility props exist anywhere in apps/mobile/src today
 [ ] Over-the-air updates via expo-updates
 [ ] App icon + splash screen assets
 [ ] Privacy policy URL (required for App Store)

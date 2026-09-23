@@ -360,14 +360,17 @@ export interface WatchEvent {
 ## Full Roadmap Timeline
 
 ### ✅ Done
-- Web prototype (React, all features functional)
+- Web prototype (React, all features functional) — *note: now bit-rotted, see `STATUS.md`*
+- Scaffold Expo project (SDK 51, expo-router)
+- Port prototype to React Native (Day grid, date strip, tasks backlog, settings, watch preview)
+- Zustand + AsyncStorage persistence (three persisted stores in `packages/core/src/store/`)
+- Block drag-to-reschedule + resize knobs (`d0d0f14`)
 
 ### 🔨 Now — Mobile App (Est. 4–6 weeks)
-- [ ] Scaffold Expo project
-- [ ] Port prototype to React Native
-- [ ] Zustand + AsyncStorage persistence
-- [ ] Local notifications
-- [ ] TestFlight + internal Play Store track
+- [ ] Local notifications — `apps/mobile/src/services/notifications.ts` is **written but
+      imported nowhere**; needs a call site + permission request at startup
+- [ ] TestFlight + internal Play Store track — blocked: no `eas.json`, no EAS project,
+      no `ios/` directory
 
 ### 📡 Next — Watch Sync (Est. 3–4 weeks after mobile)
 - [ ] Wear OS native module (React Native bridge)
