@@ -4,6 +4,12 @@ dist/
 build/
 android/
 ios/
+# The bare android/ rule above is for the generated native dirs under apps/mobile and
+# watch/*. Expo local modules keep their Kotlin under an android/ folder that IS source:
+!apps/mobile/modules/**/android/
+# Gradle per-machine state (watch/android-wearos is a committed Gradle project)
+.gradle/
+local.properties
 *.jks
 *.p8
 *.p12

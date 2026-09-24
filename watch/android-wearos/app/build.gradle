@@ -1,0 +1,63 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+android {
+    // Kotlin package / R class. Deliberately NOT the applicationId — see below.
+    namespace 'com.planner1440.watchface'
+
+    // The installed SDK has platforms 34 and 36.1 only, and AGP 8.2.1 cannot target a
+    // minor-version platform (36.1), so this stays at 34 until the phone build's AGP moves.
+    compileSdk 34
+
+    defaultConfig {
+        // Must equal the phone app's applicationId (apps/mobile/android/app/build.gradle):
+        // the Wearable Data Layer only routes DataItems/Messages between the two halves of
+        // the *same* app, i.e. same package name AND same signing certificate.
+        applicationId 'com.planner1440.app'
+        minSdk 30          // Wear OS 3
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    signingConfigs {
+        // A copy of the React Native template debug keystore the phone build signs with
+        // (apps/mobile/android/app/debug.keystore). Same certificate on both APKs is a
+        // hard Data Layer requirement. Replace both together when a release key exists.
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+}
+
+dependencies {
+    // Canvas watch face (WatchFaceService.kt) + complication data sources (ComplicationHelper.kt)
+    implementation 'androidx.wear.watchface:watchface:1.2.1'
+    implementation 'androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1'
+    // Data Layer listener (DataLayerClient.kt)
+    implementation 'com.google.android.gms:play-services-wearable:18.2.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+}
