@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import type { PanGestureHandlerStateChangeEvent } from 'react-native-gesture-handler';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   CATEGORIES, DESIGN_TOKENS as C, MINUTES_IN_DAY,
   useCalendarStore, useTodoStore, useSettingsStore,
@@ -15,6 +15,7 @@ import type { CalendarEvent, Todo } from '@1440/core';
 import DateStrip   from '../components/calendar/DateStrip';
 import DayGrid     from '../components/calendar/DayGrid';
 import BlockModal  from '../components/ui/BlockModal';
+import { placeTodo } from '../services/placeTodo';
 import { nanoid }  from 'nanoid/non-secure';
 
 interface UndoEntry {
@@ -34,6 +35,18 @@ export default function DayScreen() {
 
   const unlinkTodo = useTodoStore(s => s.unlinkEventFromTodo);
   const todos      = useTodoStore(s => s.todos);
+
+  // Placement mode: Tasks → PICK pushes /day?pick=<todoId>. Resolved against the
+  // store on every render, so an id that is missing or no longer pending simply
+  // means "not placing". Ending placement clears the param in place (setParams)
+  // rather than replace('/day'), which would remount the screen and reset the
+  // grid's scroll position. A tab-bar tap pushes a fresh /day and drops it too.
+  const { pick }  = useLocalSearchParams<{ pick?: string }>();
+  const pickTodo  = typeof pick === 'string' && pick
+    ? todos.find(t => t.id === pick && t.status === 'pending') ?? null
+    : null;
+  const pickCat   = pickTodo ? CATEGORIES.find(c => c.id === pickTodo.categoryId) : null;
+  const endPick   = useCallback(() => router.setParams({ pick: '' }), [router]);
 
   const { selectedDate, setSelectedDate, countMode, setCountMode, wakeMinute, sleepMinute, defaultDuration } =
     useSettingsStore(s => ({
@@ -72,10 +85,15 @@ export default function DayScreen() {
   const allDatesWithEvents = [...new Set(events.map(e => e.date))];
 
   const handleLongPress = useCallback((startMinute: number) => {
+    if (pickTodo) {
+      placeTodo(pickTodo, selectedDate, startMinute);
+      endPick();
+      return;
+    }
     setNewStart(startMinute);
     setSelEv(null);
     setShowModal(true);
-  }, []);
+  }, [pickTodo, selectedDate, endPick]);
 
   const handleAddEvents = (newEvents: CalendarEvent[]) => {
     addEvents(newEvents);
@@ -178,6 +196,22 @@ export default function DayScreen() {
         </View>
 
       </View>
+
+      {/* Placement banner (Tasks → PICK): long-press a slot to place the todo there */}
+      {pickTodo && (
+        <View style={[s.pickBar, { borderLeftColor: pickCat?.color ?? ac }]}>
+          <View style={s.pickBody}>
+            <Text style={s.pickLabel}>PLACING · LONG-PRESS A FREE SLOT</Text>
+            <Text style={s.pickText} numberOfLines={1}>
+              <Text style={[s.pickTitle, { color: pickCat?.color ?? C.L1 }]}>{pickTodo.title}</Text>
+              <Text style={s.pickMeta}>{'  '}{pickTodo.durationMinutes}m · {pickCat?.label}</Text>
+            </Text>
+          </View>
+          <Pressable onPress={endPick} hitSlop={10} style={s.pickCancel}>
+            <Text style={[s.pickCancelText, { color: ac }]}>CANCEL</Text>
+          </Pressable>
+        </View>
+      )}
 
       {/* Next-block countdown banner (today only, when a future block exists) */}
       {nextEvent && minsUntilNext !== null && (
@@ -300,6 +334,20 @@ const s = StyleSheet.create({
   nextMin:   { fontWeight: '900' },
   nextTitle: { fontWeight: '700' },
   nextTime:  { color: C.L3, fontSize: 9 },
+  pickBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 14, paddingVertical: 7,
+    backgroundColor: C.bg2,
+    borderLeftWidth: 3,
+    borderBottomWidth: 1, borderBottomColor: C.borderHi,
+  },
+  pickBody:       { flex: 1, minWidth: 0 },
+  pickLabel:      { fontSize: 7, color: C.L3, letterSpacing: 1.5, marginBottom: 2 },
+  pickText:       { fontSize: 11, color: C.L2 },
+  pickTitle:      { fontWeight: '700' },
+  pickMeta:       { color: C.L3, fontSize: 9 },
+  pickCancel:     { paddingVertical: 4, paddingHorizontal: 8, borderRadius: 3, borderWidth: 1, borderColor: C.border },
+  pickCancelText: { fontSize: 9, fontWeight: '900', letterSpacing: 1 },
   fab: {
     position: 'absolute', bottom: 16, right: 16,
     paddingHorizontal: 16, paddingVertical: 9,
