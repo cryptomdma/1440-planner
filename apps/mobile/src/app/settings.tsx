@@ -8,14 +8,15 @@ import {
 } from '@1440/core';
 import MinuteInput from '../components/ui/MinuteInput';
 
-const DURATIONS = [15, 30, 45, 60, 90, 120];
-const BUFFERS   = [0, 5, 10, 15, 30];
+const DURATIONS  = [15, 30, 45, 60, 90, 120];
+const BUFFERS    = [0, 5, 10, 15, 30];
+const LEAD_TIMES = [0, 5, 10, 15, 30];
 
 export default function SettingsScreen() {
   const router = useRouter();
   const {
     countMode, bufferMinutes, defaultDuration,
-    wakeMinute, sleepMinute, highlightConflicts, rulerShowClock,
+    wakeMinute, sleepMinute, highlightConflicts, rulerShowClock, leadTimeMinutes,
     setCountMode, updateSetting,
   } = useSettingsStore();
 
@@ -81,6 +82,24 @@ export default function SettingsScreen() {
             ))}
           </View>
           <Text style={s.hint}>Gap inserted between auto-scheduled tasks</Text>
+        </Section>
+
+        {/* Notification lead time */}
+        <Section label="NOTIFICATION LEAD TIME">
+          <View style={s.chips}>
+            {LEAD_TIMES.map(v => (
+              <Pressable
+                key={v}
+                style={[s.chip, leadTimeMinutes === v && { borderColor: ac, backgroundColor: `${ac}22` }]}
+                onPress={() => updateSetting('leadTimeMinutes', v)}
+              >
+                <Text style={[s.chipText, leadTimeMinutes === v && { color: ac, fontWeight: '700' }]}>
+                  {v === 0 ? 'At start' : `${v}m`}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          <Text style={s.hint}>Remind me this long before each of today's blocks starts</Text>
         </Section>
 
         {/* Wake / Sleep */}
