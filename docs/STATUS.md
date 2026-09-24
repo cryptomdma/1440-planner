@@ -11,7 +11,7 @@ The Expo app works and is genuinely usable: it persists data, fires punctual loc
 notifications, cold-starts on the Day screen, and as of pass 4 the todo → calendar PICK
 flow actually places a linked block. Everything *around* it — watch sync, watch builds,
 backend, web prototype, iOS — is scaffolding. Twelve PRs have merged; `fix/todo-pick-flow`
-(pass 4) is open.
+(pass 4, PR #13) is open.
 
 ---
 
@@ -375,8 +375,8 @@ confirmed afterwards that `npx expo run:android` builds and launches on a physic
 
 # 1440 Planner — Pass 5: Phase 6 watch sync, part 1 (Wear OS build + phone → watch Data Layer)
 
-Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-23. The pass-4
-PR (`fix/todo-pick-flow`) should be merged by now — if it is not, stop and ask. The memory
+Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-23. PR #13
+(`fix/todo-pick-flow`, pass 4) should be merged by now — if it is not, stop and ask. The memory
 note `device-and-tooling` holds the phone serial, adb path, tap coordinates and recipes
 (including how to open a PR without `gh`); it is loaded into your context, use it.
 
