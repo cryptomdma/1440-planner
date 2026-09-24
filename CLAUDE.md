@@ -91,11 +91,36 @@ Removing any of it breaks the build in non-obvious ways. The root `package.json`
 The real fix is upgrading off SDK 51, which is a deliberate future pass — see
 `docs/STATUS.md`.
 
-### `apps/mobile/android/settings.gradle`
+### `apps/mobile/android/settings.gradle` and `gradle.properties` — hand-edited
 
-Contains `useExpoModules(exclude: ['expo-linking'])` — the `expo-linking` native module is
-deliberately excluded to dodge an `expo-module-gradle-plugin` incompatibility. This is why
-`metro.config.js` must redirect `expo-linking` to a pure-JS version.
+`android/` is generated and gitignored, but two files in it carry hand edits that
+`npx expo prebuild` regenerates and **silently loses**:
+
+- `settings.gradle` — `useExpoModules(exclude: ['expo-linking'])`. The `expo-linking` native
+  module is deliberately excluded to dodge an `expo-module-gradle-plugin` incompatibility.
+  This is why `metro.config.js` must redirect `expo-linking` to a pure-JS version.
+- `gradle.properties` — `org.gradle.java.home=C:\\Program Files\\Android\\Android Studio\\jbr`.
+  Without it Gradle picks the system `java`, which is not JDK 17.
+
+**Never run `prebuild --clean`.** For manifest-level changes (URL scheme, permissions), edit
+`app.json` *and* hand-edit `android/app/src/main/AndroidManifest.xml` to match, then run
+`npx expo run:android`. If you do run `npx expo prebuild --platform android` (no `--clean`),
+diff and re-apply both edits before building. This is how the pass-3 scheme rename was done
+(2026-09-23).
+
+### `app.json` changes do NOT reach `Constants.expoConfig` on their own
+
+The JS side reads `scheme`, `plugins`, etc. from an `app.config` asset that the Gradle task
+`:expo-constants:createExpoConfig` writes (expo-constants 16.0.2,
+`node_modules/expo-constants/scripts/get-app-config-android.gradle`). That task declares an
+output dir and **no inputs**, so once it has run Gradle reports it `UP-TO-DATE` forever —
+the asset on the device was five months stale before pass 3, and the first rebuild of the
+scheme rename changed the manifest but not the JS. Before any build that must pick up an
+`app.json` change, delete
+`apps/mobile/node_modules/expo-constants/android/build/generated/assets/expo-constants/`
+and confirm the build log shows `> Task :expo-constants:createExpoConfig` **without**
+`UP-TO-DATE`. (The root `node_modules/expo-constants` is the SDK 55 copy whose script is
+always out-of-date — it is not the one this build uses.)
 
 ---
 
