@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, Pressable, StyleSheet, ActivityIndicator, AppState } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { Slot, usePathname, useRouter } from 'expo-router';
+import { Slot, usePathname, useRouter, useRootNavigationState } from 'expo-router';
+import * as Notifications from 'expo-notifications';
 import {
   DESIGN_TOKENS as C,
   useCalendarStore, useSettingsStore, useTodoStore,
@@ -11,7 +12,9 @@ import {
 import type { CalendarEvent } from '@1440/core';
 import { initAllStores } from '../services/storage';
 import { buildWatchSnapshot, syncToWatch } from '../services/watchSync';
-import { requestPermissions, hasPermissions, scheduleDailyReminder } from '../services/notifications';
+import {
+  requestPermissions, hasPermissions, scheduleDailyReminder, reminderDateFromResponse,
+} from '../services/notifications';
 
 // Coalesces the burst of store updates a drag/resize gesture emits into one
 // native cancel-all + reschedule.
@@ -140,6 +143,33 @@ export default function RootLayout() {
   // 30s, which is what makes this string change.
   const todayStr = today();
   useEffect(() => { rescheduleRef.current?.(); }, [todayStr]);
+
+  // Reminder taps → Day on the block's date. A tap that cold-starts the app
+  // arrives before any JS listener exists, so the last response is also read
+  // once the navigator is ready (root state has a key — navigating earlier
+  // throws), then cleared so a reload doesn't replay the jump.
+  const navReady = !!useRootNavigationState()?.key;
+  useEffect(() => {
+    if (!hydrated || !navReady) return;
+
+    const open = (response: Notifications.NotificationResponse | null) => {
+      const date = reminderDateFromResponse(response);
+      if (!date) return;
+      useSettingsStore.getState().setSelectedDate(date);
+      router.replace('/day');
+    };
+
+    const sub = Notifications.addNotificationResponseReceivedListener(open);
+    Notifications.getLastNotificationResponseAsync()
+      .then(response => {
+        if (!response) return;
+        open(response);
+        return Notifications.clearLastNotificationResponseAsync();
+      })
+      .catch(err => console.warn('[notifications] reminder tap handling failed', err));
+
+    return () => sub.remove();
+  }, [hydrated, navReady]);
 
   if (!hydrated) {
     return (
