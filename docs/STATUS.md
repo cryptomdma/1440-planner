@@ -388,16 +388,35 @@ note `device-and-tooling` holds the phone serial, adb path, tap coordinates and 
    Run the rebuild detached (`Start-Process cmd /c "npx expo run:android > log 2>&1"` from
    `apps/mobile`) and read the log; Gradle takes ~1.5 min warm, longer with a new module.
 2. Phone: `& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" devices` → `R5CY72XEJKD`.
-3. **There is no Wear OS target on this machine yet.** `~/.android/avd` holds only
-   `Medium_Phone_API_36.1`; `$env:LOCALAPPDATA\Android\Sdk\system-images` holds only
-   `android-36.1/google_apis_playstore/x86_64`. Options: (a) a physical Wear OS watch
-   already paired with the Galaxy, or (b) install a Wear image and AVD —
-   `sdkmanager "system-images;android-34;android-wear;x86_64"`, then
-   `avdmanager create avd -n Wear_API_34 -k "system-images;android-34;android-wear;x86_64"
-   -d wearos_small_round` — and pair it with the phone through the Wear OS companion app
-   (emulator pairing needs `adb -s R5CY72XEJKD forward tcp:5601 tcp:5601`). Data Layer
-   delivery cannot be verified without one; build the Gradle project first regardless, and
-   say in the PR which target was used.
+3. **The watch target is a Wear OS emulator — decided 2026-09-24; there is no physical
+   watch.** Nothing Wear-related exists on the machine yet: `~/.android/avd` holds only
+   `Medium_Phone_API_36.1`, `$env:LOCALAPPDATA\Android\Sdk\system-images` holds only
+   `android-36.1/google_apis_playstore/x86_64`, and `Sdk\cmdline-tools` (hence
+   `sdkmanager`/`avdmanager`) is **not installed**; only `Sdk\emulator\emulator.exe` is.
+   - **Owner, before the session (5 min in Android Studio):** Device Manager → Create
+     device → category *Wear OS* → *Wear OS Small Round* → system image API 34
+     (`android-wear`, x86_64; download it there) → name it `Wear_API_34`. Also install the
+     *Wear OS by Google* app on the Galaxy from Play (pairing UI lives there; Samsung's
+     Galaxy Wearable app does not pair emulators).
+   - **Session, first step:** `& "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe"
+     -list-avds` must print `Wear_API_34`. If it does not, the CLI fallback is: download
+     `commandlinetools-win-*_latest.zip` from developer.android.com/studio, expand it to
+     `Sdk\cmdline-tools\latest\` (the zip's inner `cmdline-tools` folder becomes `latest`),
+     accept licences with `(1..30 | % {'y'}) | & "$sdk\cmdline-tools\latest\bin\sdkmanager.bat" --licenses`,
+     then `sdkmanager "system-images;android-34;android-wear;x86_64"` and
+     `avdmanager create avd -n Wear_API_34 -k "system-images;android-34;android-wear;x86_64" -d wearos_small_round`.
+   - **Boot and pair:** `Start-Process "$sdk\emulator\emulator.exe" -ArgumentList '-avd Wear_API_34'`
+     (first boot takes minutes; `adb wait-for-device` on its serial, normally
+     `emulator-5554`). Pair it with the *physical* Galaxy per
+     developer.android.com/training/wearables/get-started/connect-phone: `adb -s R5CY72XEJKD
+     forward tcp:5601 tcp:5601`, then on the phone open *Wear OS by Google* → add a new
+     watch → pick the emulator. Both devices then show in `adb devices`; every watch
+     command below uses `-s emulator-5554`. Fallback if pairing the physical phone fights
+     you: pair the Wear AVD with the `Medium_Phone_API_36.1` AVD through Device Manager's
+     pairing assistant and run `npx expo run:android` against that phone AVD instead (it is
+     a `google_apis_playstore` image, so Play Services and the Data Layer are present).
+   - Build the watch Gradle project first regardless — it does not need the emulator to
+     compile.
 4. Toolchain facts from the phone build — reuse them for the watch project so both use the
    same versions: Gradle 8.8 (`apps/mobile/android/gradle/wrapper/gradle-wrapper.properties`),
    AGP 8.2.1 (`node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml:2`),
@@ -519,8 +538,10 @@ under `watch/android-wearos/`.
 - The face's *look* is out of scope — it only has to render the snapshot it receives.
 - Design tokens are irrelevant on the watch side, but do not add new hex values to the app.
 
-## Verification (required; say which target was used)
+## Verification (required; on the Wear OS emulator, serial `emulator-5554` unless `adb devices` says otherwise)
 
+0. `adb devices` lists both `R5CY72XEJKD` and the emulator, and the Wear OS app on the
+   phone shows the emulator as connected. Screenshot the emulator once paired.
 1. `cd watch/android-wearos; .\gradlew :app:assembleDebug` succeeds; `adb -s <watch> install -r`
    the APK; the face is selectable on the watch. Screenshot it (`adb -s <watch> shell screencap`).
 2. Phone rebuild log shows `:wearable-data-layer:compileDebugKotlin` (or similar) and the app
@@ -548,5 +569,5 @@ under `watch/android-wearos/`.
   renumber; add a pass-5 log entry; replace this section with the pass-6 handoff prompt
   (candidates: SDK upgrade off 51, or timer-driven watch resync + `syncIOS` via
   WatchConnectivity).
-- Update the `device-and-tooling` memory note with the watch target's serial and pairing
-  recipe.
+- Update the `device-and-tooling` memory note with the emulator's serial, the pairing steps
+  that actually worked, and the emulator boot time.
