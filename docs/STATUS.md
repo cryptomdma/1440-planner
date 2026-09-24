@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated: 2026-09-23** — read this first; it is the source of truth for project state.
+**Last updated: 2026-09-24** — read this first; it is the source of truth for project state.
 The other docs describe *intent*, and some of it predates what actually shipped.
 
 ---
@@ -8,10 +8,15 @@ The other docs describe *intent*, and some of it predates what actually shipped.
 ## TL;DR
 
 The Expo app works and is genuinely usable: it persists data, fires punctual local
-notifications, cold-starts on the Day screen, and as of pass 4 the todo → calendar PICK
-flow actually places a linked block. Everything *around* it — watch sync, watch builds,
-backend, web prototype, iOS — is scaffolding. Twelve PRs have merged; `fix/todo-pick-flow`
-(pass 4, PR #13) is open.
+notifications, cold-starts on the Day screen, and the todo → calendar PICK flow places a
+linked block. As of pass 5 the **Android watch sync transport exists end to end**: a
+`WearableDataLayer` Expo local module on the phone writes every calendar change to the
+Wearable Data Layer, and `watch/android-wearos` is a real two-module Gradle project whose
+Watch Face Format face installs and renders on the owner's Galaxy Watch 7. **The phone →
+watch hop itself has not been exercised on hardware yet** — the phone dropped off `adb`
+minutes into pass 5 and never returned; the watch side was proven with an injected
+snapshot. Backend, web prototype and iOS are still scaffolding. Fifteen PRs have merged;
+`feat/watch-sync-android` (pass 5, PR #16) is open.
 
 ---
 
@@ -56,8 +61,8 @@ backend, web prototype, iOS — is scaffolding. Twelve PRs have merged; `fix/tod
 
 | Area | State |
 |---|---|
-| **Watch sync transport** | `buildWatchSnapshot()` is complete and correct. Both platform bridges are `console.log` stubs — `apps/mobile/src/services/watchSync.ts:73-81`. No RN native module exists on either side. |
-| **Wear OS watch face** | Real Kotlin (`WatchFaceService.kt`, `DataLayerClient.kt`, `ComplicationHelper.kt`) + `watchface.xml`, but **no `build.gradle` / `settings.gradle` / `AndroidManifest.xml`** — not an importable module, cannot compile. |
+| **Watch sync transport** | **Android built in pass 5, phone → watch delivery not yet verified on hardware.** `apps/mobile/modules/wearable-data-layer/` (Expo local module, Kotlin) puts the `WatchSnapshot` JSON at Data Layer path `/1440/snapshot`; `apps/mobile/src/services/watchSync.ts` calls it on every calendar change (no timer). Compiles (`:wearable-data-layer:compileDebugKotlin`), APK built, **not installed on the phone**. iOS bridge is still a `console.log` stub. |
+| **Wear OS watch face** | **Builds, installs and renders (pass 5).** `watch/android-wearos` = `:app` (`com.planner1440.app`: Data Layer listener + two complication data sources + the androidx Canvas face, which **Wear OS 6 blocks outright**) and `:wff` (`com.planner1440.wff`: the no-code Watch Face Format face that actually shows, fed by those complications). Shows 24 h sweep, minute hand, minute counter and next block — **not per-block arcs** (Known debt). |
 | **watchOS face** | Real Swift (`WatchFaceView.swift`, `WatchConnectivityManager.swift`, …) but **no `.xcodeproj` / `Package.swift` / `Info.plist`** — cannot compile. |
 | **Backend** | `backend/supabase/` is three **0-byte** files. No `config.toml`, no client dependency. Directory names only. |
 | **`docs/API_SPEC.md`** | Intentionally left empty — there is no backend to spec yet. |
@@ -90,6 +95,29 @@ split bundle`, surfaced as "Possible unhandled promise rejection"). Pass 4 hit t
 `useCalendarStore.deleteEvent` — the todo unlink silently never ran. Use static imports;
 there are no cycles between the stores. Recorded in `CLAUDE.md`.
 
+**Phone → watch delivery is unverified on hardware.** The pass-5 phone vanished from `adb`
+after the first few minutes and never came back (USB; `adb connect 192.168.1.91:5555` is
+not enabled), so `WearableDataLayer.sendSnapshot()` has been compiled but never run. The
+rebuilt phone APK sits at `apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk`
+(built 2026-09-24 14:36) and is **not installed**. The watch side was proven by injecting a
+snapshot into the code app's SharedPreferences (pass-5 log). First thing next pass.
+
+**The WFF face cannot draw per-block arcs, and its minute counter is a complication.**
+Watch Face Format has no way to render N arbitrary arcs from a JSON snapshot, so the face
+shows the 24-hour sweep, the minute hand, the minute counter (slot 1) and the next block
+(slot 2). Complication `UPDATE_PERIOD_SECONDS=60` never fired in 2.5 min of waiting on the
+Galaxy Watch 7 (the platform clamps to 300 s), so between snapshots the counter can be up
+to 5 min stale; `DataLayerClient` calls `requestUpdateAll()` on every snapshot, which is the
+real refresh path. Options for arcs: one `RANGED_VALUE` slot per block (bounded count) or a
+phone-rendered bitmap complication. Not started.
+
+**`tsc` can fail on a generated file while Metro runs.** Creating files or directories
+outside `src/app` while Metro is up (pass 4's `placeTodo.ts`, pass 5's `modules/`) makes
+expo-router's typed-routes watcher write backslash "routes" such as `/..\services\placeTodo`
+into `apps/mobile/.expo/types/router.d.ts`, and `npx tsc -p apps/mobile` fails with
+TS1005/TS1160 there. Not our code; restart Metro (it regenerates the file clean), then
+re-run `tsc`. Recorded in `CLAUDE.md`.
+
 *Fixed in pass 3 (kept for history):* the digit-leading URL scheme `1440planner` that made
 every cold start land on "Unmatched Route"; reminders firing 18–61 s late without an
 exact-alarm permission; reminder taps not being handled. See the 2026-09-23 pass-3 log.
@@ -118,8 +146,9 @@ react-navigation approach abandoned for expo-router. Safe to delete.
 
 **No tests, no lint.** No test framework and no `check`/`lint` script in any
 `package.json`. Verification is manual, on-device. `npx tsc --noEmit -p apps/mobile` and
-`-p packages/core` are both clean as of pass 4 (the long-standing `useCalendarStore.ts`
-dynamic-import error is gone with the import).
+`-p packages/core` are both clean as of pass 5 (after a Metro restart — see the typed-routes
+note above). The watch project has no tests either; `gradlew :app:assembleDebug
+:wff:assembleDebug` is the check.
 
 **Doc drift.** `docs/REPO_STRUCTURE.md` lists components that never existed
 (`EventDetailSheet.tsx`, `TodoPlacementPanel.tsx`, `UndoToast.tsx`, `SettingsPanel.tsx`) and
@@ -142,20 +171,138 @@ a `packages/core/src/theme.ts` that was deliberately not created (see `DESIGN_TO
 
 Candidates for the next pass, ordered by leverage:
 
-1. **Start Phase 6 watch sync.** Make `watch/android-wearos` a buildable Gradle project,
-   then implement `WearableDataLayerModule` as an Expo local module and replace the Android
-   stub in `apps/mobile/src/services/watchSync.ts:73-76`. This is the headline roadmap
-   feature and the biggest single chunk of work. The pass-5 handoff prompt at the bottom of
-   this file has the file-and-line detail.
+1. **Finish Phase 6 watch sync on hardware.** Reconnect the phone, install the pass-5 APK,
+   and run the phone → watch verification the pass-6 handoff spells out (phone logcat
+   `[watchSync:android]` → watch logcat `1440:DataLayer` → the face's next-block slot).
+   Then timer-driven resync (`currentBlock`/`nextBlock` go stale between edits) and
+   `syncIOS` via WatchConnectivity.
 2. **SDK upgrade off 51.** Resolves the dependency rot, re-enables Expo Go, and removes the
    `createExpoConfig` up-to-date trap. Invasive; deserves its own session with nothing else
    in it.
+3. **Per-block arcs on the WFF face** (Known debt) — a design pass once 1 is done.
 
 ---
 
 ## Session log
 
-### 2026-09-23 — Pass 4: todo → calendar PICK flow, Settings back fallback (+ two more bugs)
+### 2026-09-24 — Pass 5: Phase 6 watch sync, part 1 — Wear OS build + Data Layer module (PR #16, open)
+Branch `feat/watch-sync-android`. Native work on both sides. Watch: the owner's physical
+Galaxy Watch 7 44mm (`SM-L310`, Android 16 / Wear OS 6) over Wi-Fi ADB — the pairing from
+the previous day was still live at `192.168.1.68:44881`. Phone: `R5CY72XEJKD` was on `adb`
+at the start and **gone five minutes later, for the rest of the session**. Pass-3 Metro
+(PID 25108) killed as planned; a fresh detached `npx expo start` is on :8081.
+
+**Shipped — watch (`watch/android-wearos`)**
+- **A real Gradle project, two modules.** `settings.gradle`, root `build.gradle` (AGP 8.2.1,
+  Kotlin 1.9.23), `gradle.properties` (JDK 17 via `org.gradle.java.home`, same line as the
+  phone build), the 8.8 wrapper copied from `apps/mobile/android/`. `:app` = the Kotlin
+  (`compileSdk`/`targetSdk` 34, `minSdk` 30 — the SDK has platforms 34 and 36.1 only, and
+  AGP 8.2.1 cannot target a minor-version platform). `.gitignore` gained `.gradle/` and
+  `local.properties`.
+- **`:app` is `applicationId com.planner1440.app` and signs with a copy of the phone's RN
+  debug keystore** (`app/debug.keystore`, SHA1 `5E:8F:16:06:…`). The handoff said different
+  ids are fine on Wear OS 3+; the Data Layer only routes between the two halves of the
+  *same* app (package name + certificate), so this is the safe choice. `namespace` stays
+  `com.planner1440.watchface`.
+- **Manifest** (`app/src/main/AndroidManifest.xml`): watch feature, `WAKE_LOCK`, the
+  wearable `uses-library`, `standalone=false`; `WatchFaceService` with `BIND_WALLPAPER`,
+  the `WallpaperService` filter + `WATCH_FACE` category, previews, and
+  `android.service.wallpaper` → **`@xml/watch_face`** (a `<wallpaper/>`; the handoff's
+  `watch_face_info` is the WFF descriptor and `WallpaperInfo` rejects it); the two
+  complication services with `BIND_COMPLICATION_PROVIDER`, `SUPPORTED_TYPES=SHORT_TEXT`,
+  `UPDATE_PERIOD_SECONDS=60`; `DataLayerClient` exported with `DATA_CHANGED` /
+  `MESSAGE_RECEIVED` + `wear://*/1440`.
+- **Kotlin compile fixes** (all pre-existing): `class WatchFaceService : WatchFaceService()`
+  is an inheritance *cycle* to the compiler, not a shadow — now
+  `androidx.wear.watchface.WatchFaceService()`; `loadSnapshot()` used `return` inside an
+  expression body (twice) — block bodies; `registerReceiver` → `RECEIVER_NOT_EXPORTED` on
+  33+; `onDataChanged` skips `TYPE_DELETED` events.
+- **Wear OS 6 blocks the androidx Canvas face — confirmed on the device, not a hunch.**
+  Installing `:app` logs `WearServices: [WatchFacesRestrictionManagerImpl] Watch face
+  (WatchFaceId[com.planner1440.app,…WatchFaceService]) is blocked` and
+  `[WFInfoResolver] Blocked watch face …`; it never appears in the picker. The two
+  complication data sources in the same APK are accepted (`[ComplicationsCompanionClient]
+  Adding provider entry …`). Samsung's own service-based faces are exempt as system apps —
+  that was the pass-4 evidence, and it does not extend to sideloads.
+- **So the face is Watch Face Format: new module `:wff`** (`com.planner1440.wff`,
+  `minSdk 33`, `android:hasCode=false`, `<property com.google.wear.watchface.format.version=1>`).
+  `wff/src/main/res/raw/watchface.xml` is generated by `tools/make-watchface.ps1` (96 ticks
+  unrolled): ring, ticks, 24 h progress sweep and minute hand from `[HOUR_0_23]*60+[MINUTE]`,
+  a `DigitalClock`, and two `SHORT_TEXT` `ComplicationSlot`s whose `DefaultProviderPolicy`
+  points at `com.planner1440.app/…MinuteCounterComplicationService` and
+  `…NextBlockComplicationService`. The old `res/raw/watchface.xml` sketch and
+  `res/xml/watch_face_info.xml` moved out of `:app` (they were never valid WFF/wallpaper XML).
+  Preview/icon PNGs for both modules come from `tools/make-preview.ps1` (System.Drawing).
+- **`DataLayerClient` is now the single writer.** It persists the JSON to SharedPreferences
+  `1440_watch/snapshot`, calls `ComplicationDataSourceUpdateRequester.requestUpdateAll()`
+  for both sources, then rebroadcasts for the Canvas renderer. Before, only the (blocked)
+  renderer wrote the prefs, so on this device the complications would never have seen data.
+  The renderer now loads the persisted snapshot at init instead of starting empty.
+- **`MinuteCounterComplicationService`** takes the minute from the watch clock and only
+  `countMode` from the snapshot (the phone's `currentMinute` is stale within a minute), and
+  sets a title `MIN LEFT` / `MIN ELAPSED` that the WFF face shows under the number.
+- `watch/android-wearos/README.md` written (was 0 bytes); `docs/WATCH_FACE_ROADMAP.md`'s
+  "React Native Bridge" section corrected (it pointed at the gitignored `android/` tree).
+
+**Shipped — phone (`apps/mobile`)**
+- **Expo local module `modules/wearable-data-layer/`**: `expo-module.config.json`,
+  `android/build.gradle` (expo-modules-core plugin + `play-services-wearable:18.2.0`),
+  `WearableDataLayerModule.kt` (`Name("WearableDataLayer")`, `AsyncFunction("sendSnapshot")`
+  → `PutDataMapRequest.create("/1440/snapshot")` with `snapshot_json` + a `ts` long,
+  `setUrgent()`, `putDataItem`, resolves/rejects on the Task), `index.ts` via
+  `requireOptionalNativeModule` so JS reloaded against an old APK gets `null`, not a crash.
+- `watchSync.ts`: `syncAndroid()` calls it, keeps the `[watchSync:android] <min> min, N
+  events` dev log, warns on failure, logs "native module missing" when `null`.
+- **Root `.gitignore`:** the bare `android/` rule would have ignored the module's Kotlin;
+  added `!apps/mobile/modules/**/android/` (verified with `git check-ignore -v`).
+- Autolinking picked it up with **no edit to the hand-maintained `settings.gradle`**: the
+  phone Gradle log shows `- wearable-data-layer (UNVERSIONED)` and
+  `:wearable-data-layer:compileDebugKotlin`. Built with `apps/mobile/android/gradlew
+  :app:assembleDebug` directly (3 min 8 s) because `expo run:android` needs a device.
+
+**Verification**
+0. `adb devices`: watch `192.168.1.68:44881` throughout; phone present at 14:20, absent from
+   ~14:25 onward (also unreachable over Wi-Fi). ⚠️
+1. `gradlew :app:assembleDebug :wff:assembleDebug` ✅ (12 MB + 40 KB). Both installed on the
+   watch. `:app`'s face: **blocked** (logcat above). `:wff`'s face: listed under *Downloaded*
+   in the watch's "Add watch face" list, added, and active —
+   `dumpsys wallpaper` → `com.samsung.wear.watchface.runtime/…DeclarativeWatchFaceRuntime0`;
+   both slots bound to our sources (`ComplicationInfo{slotId=11, …MinuteCounterComplicationService}`,
+   `slotId=12, …NextBlockComplicationService`). Screenshots taken. ✅
+   - First attempt could not be favourited: `IllegalArgumentException:
+     defaultDataSourcePolicy.primaryDataSourceDefaultType EMPTY must be in the supportedTypes
+     list` — the attribute is `primaryProviderType`, not `primaryProviderDefaultType`. Fixed.
+   - The hand did not render as a narrow rotated `PartDraw`; a full-size `Group` with
+     `pivotX/Y=0.5` + `Transform target="angle"` does.
+2. Phone Gradle log shows the module tasks ✅; **app not cold-started — no phone.** ⚠️
+3. **Phone → watch not exercised.** ⚠️ Watch-side chain proven instead: a fake snapshot
+   (`countMode: down`, `nextBlock: FakeStandup 3:30 PM`) pushed with `run-as` into
+   `shared_prefs/1440_watch.xml`, face switched away and back → DWF runtime logs
+   `[11:TEXT] "542"`, `[11:TITLE] "MIN LEFT"`, `[12:TEXT] "FakeStandu 3:30 PM"` and the
+   face shows exactly that (screenshot). ✅ for everything downstream of `onDataChanged`.
+4. Not run (needs 3). ⚠️
+5. `am force-stop com.planner1440.app` then re-activate the face → complications still show
+   the values (they read SharedPreferences; the process was not even alive between
+   requests). ✅
+6. `npx tsc --noEmit -p apps/mobile` ✅ — after restarting Metro; the stale Metro had put
+   `/..\..\modules\wearable-data-layer\` into `.expo/types/router.d.ts` (Known debt).
+
+**Not done / caveats**
+- The phone → watch hop. Everything up to `putDataItem` is code that compiled but never
+  ran; everything from `onDataChanged` onward ran with injected data. The Data Layer's own
+  routing (same package + certificate, paired node) is the one untested assumption.
+- Per-block arcs are absent from the face; the Canvas renderer that draws them is blocked
+  on this hardware (Known debt).
+- No timer-driven resync; no iOS; `syncIOS` still a stub.
+- `set-watchface` over `DEBUG_SURFACE` cannot *add* a face (`Watch face family doesn't
+  exist`) — the picker UI is required once; after that `--es watchFaceId com.planner1440.wff`
+  works. Recipe in the memory note and the watch README.
+- The watch still has the fake snapshot in `com.planner1440.app`'s prefs; the first real
+  snapshot overwrites it.
+- `watch/android-wearos/gradle.properties` commits a machine-specific `org.gradle.java.home`
+  (the handoff asked for it); edit it on another machine.
+
+### 2026-09-23 — Pass 4: todo → calendar PICK flow, Settings back fallback (+ two more bugs) (PR #13, merged `77afc75`)
 Branch `fix/todo-pick-flow`. JS-only; no native rebuild. Reused the Metro that pass 3's
 `expo run:android` left on :8081 (PID 25108) — Fast Refresh for `apps/mobile` edits, one
 `am force-stop` + relaunch to pick up the `packages/core` edit. Same Galaxy over `adb`.
@@ -367,254 +514,157 @@ confirmed afterwards that `npx expo run:android` builds and launches on a physic
 
 ---
 
-## 🤝 Handoff prompt (pass 5)
+## 🤝 Handoff prompt (pass 6)
 
 > Standing rule (`CLAUDE.md` → Session workflow): every session ends by replacing this
 > section with the *next* session's prompt, in this format. Paste the block below as the
 > opening message of the next session.
 
-# 1440 Planner — Pass 5: Phase 6 watch sync, part 1 (Wear OS build + phone → watch Data Layer)
+# 1440 Planner — Pass 6: Phase 6 watch sync, part 2 (prove phone → watch on hardware, then keep it fresh)
 
-Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-24. PR #13
-(`fix/todo-pick-flow`, pass 4) is merged as `77afc75`; `main` is clean. The memory note
-`device-and-tooling` holds the phone serial, adb path, tap coordinates, the watch's
-connect flow and recipes (including how to open a PR without `gh`); it is loaded into your
-context, use it.
+Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-24. PR #16
+(`feat/watch-sync-android`, pass 5) is open — check whether it has been merged; if not,
+branch from it, not from `main`. The memory note `device-and-tooling` holds the phone
+serial, adb path, the watch's connect flow, the first-time face-picker recipe, the
+`DEBUG_SURFACE` switch broadcast, the `run-as` snapshot-injection recipe and how to open a
+PR without `gh`; it is loaded into your context, use it.
 
 ## Prerequisites — check before writing anything
 
-1. **This pass needs a native rebuild of the phone app** (it adds an Expo local module).
-   Kill the Metro tree that has been on :8081 since pass 3 first:
-   `Get-NetTCPConnection -LocalPort 8081 -State Listen` → `taskkill /PID <pid> /T /F`.
-   Run the rebuild detached (`Start-Process cmd /c "npx expo run:android > log 2>&1"` from
-   `apps/mobile`) and read the log; Gradle takes ~1.5 min warm, longer with a new module.
-2. Phone: `& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" devices` → `R5CY72XEJKD`.
-3. **Watch target: the owner's physical 44mm Galaxy Watch** (Wear OS 3+, already paired
-   with the S25+ over Bluetooth). ADB debugging **and** "Debugging over Wi-Fi" were enabled
-   on it on 2026-09-24. A Galaxy Watch charges on pogo pins and has no USB data path, so
-   **Wi-Fi ADB is the only way in**; there is no Bluetooth debugging on Wear OS 3+.
-   - **It connects, and the flow is the pairing-code one, not `:5555`.** Established
-     2026-09-24. Developer options → Wi-Fi debugging shows *two different* ports: the
-     pairing port inside the "Pair new device" dialog and the connect port on the main
-     screen. Both are random per session; the IP has been stable at `192.168.1.68`.
-     ```
-     adb pair 192.168.1.68:<pair-port> <6-digit-code>
-     adb connect 192.168.1.68:<connect-port>     # was :44881 on 2026-09-24
-     ```
-   - **Keep it awake.** Put the watch on its charger and turn on Developer options → *Stay
-     awake while charging*, or the radio sleeps and the session dies mid-build.
-   - **A silent subnet means asleep, not broken.** Before the watch was woken, a TCP probe
-     of all 254 hosts on `192.168.1.0/24` found nothing and `adb mdns services` listed
-     nothing. Galaxy Watches park Wi-Fi when the screen is off and the phone is in
-     Bluetooth range. PC is `192.168.1.80`, phone `192.168.1.91`.
-   - **Re-probe helper** (this is the exact scan pass 4 ran; adjust the subnet if it moved):
-     ```powershell
-     $p = foreach ($i in 1..254) { $ip = "192.168.1.$i"; $c = New-Object Net.Sockets.TcpClient
-       [pscustomobject]@{ IP = $ip; C = $c; AR = $c.BeginConnect($ip, 5555, $null, $null) } }
-     Start-Sleep -Milliseconds 2500
-     foreach ($x in $p) { if ($x.AR.IsCompleted) { try { $x.C.EndConnect($x.AR); if ($x.C.Connected) { $x.IP } } catch {} }; $x.C.Close() }
-     ```
-   - **What it is** (read off the device 2026-09-24, do not re-derive):
-
-     | | |
-     |---|---|
-     | Model | Samsung Galaxy Watch 7 44mm, `SM-L310`, device `fresh7bl` |
-     | OS | Android **16**, SDK **36**, `ro.cw_build.wear_sdk.version=7` (Wear OS 6) |
-     | Screen | **480x480**, density 340 |
-     | ABI | `armeabi-v7a` (32-bit; only matters if a module ships native libs) |
-     | Data Layer | `com.google.android.gms` + `com.google.android.wearable.app` installed |
-
-     This is a **much newer OS than the target the watch code was written against**, which
-     drives the two version notes in the traps list below. Budget for it.
-   - `adb devices` then lists both; every watch command below uses `-s 192.168.1.68:<port>`.
-   - **Fallback, only if the watch stays unreachable:** a Wear OS emulator. `Sdk\cmdline-tools`
-     is **not installed** (only `Sdk\emulator\emulator.exe` exists), so build the AVD from
-     Android Studio's Device Manager: Wear OS **Large Round** (454x454, the profile that
-     matches a 44mm panel; Small Round is 384x384, the 40mm class), API 34 `android-wear`
-     x86_64, named `Wear_API_34`. Pair it with the physical phone via `adb -s R5CY72XEJKD
-     forward tcp:5601 tcp:5601` and the *Wear OS by Google* app, or pair it with the
-     `Medium_Phone_API_36.1` AVD and run `npx expo run:android` against that phone instead
-     (it is a `google_apis_playstore` image, so Play Services and the Data Layer are there).
-     Say in the PR which target was used.
-   - Build the watch Gradle project first regardless — compiling needs no device at all.
-4. Toolchain facts from the phone build — reuse them for the watch project so both use the
-   same versions: Gradle 8.8 (`apps/mobile/android/gradle/wrapper/gradle-wrapper.properties`),
-   AGP 8.2.1 (`node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml:2`),
-   Kotlin 1.9.23 and compileSdk/targetSdk 34 (`apps/mobile/android/build.gradle`), JDK 17 =
-   Android Studio's `jbr` (`org.gradle.java.home` in `apps/mobile/android/gradle.properties`).
-5. Branch from updated `main`: `git checkout main; git pull; git checkout -b feat/watch-sync-android`.
+1. **The phone.** `& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" devices` must
+   list `R5CY72XEJKD`. It dropped off USB five minutes into pass 5 and never came back;
+   `adb connect 192.168.1.91:5555` does not work (tcpip mode was never enabled). If it is
+   missing, stop and tell the owner to re-seat the cable / re-accept the USB-debugging
+   prompt — **nothing in this pass can be verified without it.** Once it is back, consider
+   `adb tcpip 5555` + `adb connect 192.168.1.91:5555` so a USB drop is survivable.
+2. **The watch.** `192.168.1.68:<port>` should still be listed if the wireless-debugging
+   session survived (it survived >24 h across passes 4–5 at `:44881`). Otherwise Developer
+   options → Wireless debugging → `adb pair` (pair-port + code) then `adb connect`
+   (connect-port). Keep it on the charger with *Stay awake while charging*.
+3. **Metro.** Pass 5 left a fresh detached `npx expo start` on :8081 (started ~15:05 on
+   2026-09-24). `Get-NetTCPConnection -LocalPort 8081 -State Listen` → if it is alive, reuse
+   it (JS-only edits Fast-Refresh; a `packages/core` edit needs `am force-stop` + relaunch).
+   Kill the tree (`taskkill /PID <pid> /T /F`) only if you change native code again.
+4. **The phone APK from pass 5 is built but not installed:**
+   `apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk` (159 MB, 2026-09-24
+   14:36, contains `:wearable-data-layer`). `adb -s R5CY72XEJKD install -r <apk>` is the
+   fastest path; a plain `npx expo run:android` (Metro killed first) rebuilds it in ~3 min
+   if anything native changed. Both watch APKs *are* installed and current
+   (`com.planner1440.app` 1.0.0 and `com.planner1440.wff` 1.0.0 built from the PR's tree).
+5. Branch: `git checkout main; git pull` — if #16 is merged, `git checkout -b
+   feat/watch-sync-resync`; if not, `git checkout feat/watch-sync-android; git pull` and
+   branch from there.
 
 ## Goal
 
-`watch/android-wearos` becomes a Gradle project that compiles (`.\gradlew :app:assembleDebug`)
-and installs on a Wear OS target; the phone app gets a real `WearableDataLayerModule` (an
-Expo *local* module) that `syncToWatch()` calls; a calendar change on the phone reaches
-`DataLayerClient.onDataChanged` on the watch and the face redraws its arcs. Closes STATUS
-"Next up" #1 and rewrites the "Watch sync transport" and "Wear OS watch face" rows of the
-"Scaffolded but NOT wired" table.
+Prove the one hop pass 5 could not: a calendar change on the phone reaches
+`DataLayerClient.onDataChanged` on the watch and the face's *next block* slot changes.
+Then make the snapshot stay fresh between edits (timer-driven resync) so `currentBlock` /
+`nextBlock` are never more than a minute stale. Closes STATUS "Next up" #1's first half;
+rewrites the "Watch sync transport" row to "verified on hardware".
 
-## Findings from pass 4 — do not re-derive
+## Findings from pass 5 — do not re-derive
 
-**Phone side, what exists.** `apps/mobile/src/services/watchSync.ts:6-21` is the
-`WatchSnapshot` contract (`version`, `date`, `currentMinute`, `countMode`, `wakeMinute`,
-`sleepMinute`, `events[{startMinute,durationMinutes,categoryId,color}]`, `currentBlock?`,
-`nextBlock?`). `buildWatchSnapshot()` (`:23-62`) is complete. `syncToWatch()` (`:65-71`)
-branches on `Platform.OS`; `syncAndroid()` (`:73-76`) is the stub to replace — its own TODO
-names the call: `WearableDataLayerModule.sendSnapshot(JSON.stringify(snapshot))`.
-`apps/mobile/src/app/_layout.tsx:66-81` subscribes to `useCalendarStore` and calls
-`syncToWatch` on every calendar change and *only* then — nothing fires on a timer, so
-`currentBlock`/`nextBlock` go stale between edits (the watch derives the minute from its own
-clock, `WatchFaceService.kt:96`, so the arcs stay right). The stub logs
-`[watchSync:android] <min> min` in dev; keep a dev log so the rebuild is checkable from logcat.
+**Phone side.** `apps/mobile/modules/wearable-data-layer/index.ts:15` exports the module
+via `requireOptionalNativeModule` (null on an APK without it).
+`…/android/src/main/java/com/planner1440/wearable/WearableDataLayerModule.kt:29-51` is
+`AsyncFunction("sendSnapshot")`: `PutDataMapRequest.create("/1440/snapshot")`, keys
+`snapshot_json` + `ts` (long, keeps identical re-sends flowing), `setUrgent()`,
+`putDataItem`, logs `1440:WatchSync putDataItem ok wear://…/1440/snapshot (N chars)` on
+success. `apps/mobile/src/services/watchSync.ts:77-90` (`syncAndroid`) awaits it and logs
+`[watchSync:android] <min> min, <n> events` in dev. The only trigger is the calendar
+subscription at `apps/mobile/src/app/_layout.tsx:66-81`; it resubscribes whenever
+`currentMinute` changes (every 30 s via `useCurrentMinute`) but sends **only on store
+changes**. Nothing sends on a timer, on foreground, or on watch reconnect.
 
-**Watch side, what exists.** `watch/android-wearos/app/src/main/java/com/planner1440/watchface/`:
-- `DataLayerClient.kt` — a `WearableListenerService`. Expects a DataItem at path
-  `/1440/snapshot` with string key `snapshot_json` (`:19-20`, `:26-37`) or a Message on the
-  same path (`:39-45`), and rebroadcasts the JSON in-process (`:47-53`).
-- `WatchFaceService.kt` — androidx `Renderer.CanvasRenderer2` (`:45-53`); parses the same
-  keys as `WatchSnapshot` (`:97-138`); persists the JSON to SharedPreferences `1440_watch`
-  for the complications (`:61-63`).
-- `ComplicationHelper.kt` — `MinuteCounterComplicationService` (`:18`) and
-  `NextBlockComplicationService` (`:56`), both `SuspendingComplicationDataSourceService`.
-- `res/raw/watchface.xml` (Watch Face Format) and `res/xml/watch_face_info.xml`.
+**Watch side.** `watch/android-wearos/app/src/main/java/com/planner1440/watchface/DataLayerClient.kt:42-54`
+(`onDataChanged`, skips `TYPE_DELETED`, logs `1440:DataLayer Received snapshot,
+currentMinute=…`) → `:64-80` persists to SharedPreferences `1440_watch/snapshot`, calls
+`requestUpdateAll()` on both complication sources, rebroadcasts in-process.
+`ComplicationHelper.kt:36-47` (minute from the watch clock, `countMode` from the snapshot,
+title `MIN LEFT`/`MIN ELAPSED`); `:56` and `:92` read the prefs. The WFF face
+`watch/android-wearos/wff/src/main/res/raw/watchface.xml:321-348` binds slot 1 → 
+`MinuteCounterComplicationService`, slot 2 → `NextBlockComplicationService` (generated by
+`tools/make-watchface.ps1`). `WatchFaceService.kt:33` (Canvas face) is **blocked by Wear
+OS 6 on this watch** — ignore it for verification.
 
-**Missing on the watch side:** `settings.gradle`, root `build.gradle`, `app/build.gradle`,
-`gradle.properties`, the Gradle wrapper, `app/src/main/AndroidManifest.xml`, and
-`res/drawable/watch_face_preview` — `watch_face_info.xml:3` references it, so resource
-compilation fails until a PNG exists. Both watch `README.md` files are 0 bytes.
+**What was proven and what was not.** With a fake snapshot written into
+`com.planner1440.app`'s prefs (recipe in the memory note) the face showed `542 / MIN LEFT /
+FakeStandu 3:30 PM` — everything from the prefs write onward works, including after
+`am force-stop`. **Never exercised:** `putDataItem` on the phone, GMS routing to the
+watch node, `onDataChanged`. The untested assumption is that same `applicationId`
+(`com.planner1440.app` on both) + same debug certificate is enough for the Data Layer to
+pair the two apps; that is the documented requirement and why pass 5 chose it over the
+handoff's `com.planner1440.watchface`.
 
-**Compile/runtime traps already visible in the Kotlin.**
-- `WatchFaceService.kt:72-75` calls `registerReceiver(receiver, filter)` with no flags.
-  With targetSdk ≥ 34 Android throws `SecurityException` for non-system broadcasts unless
-  `Context.RECEIVER_NOT_EXPORTED` is passed. Fix it in the same pass.
-- `WatchFaceService.kt:29` declares `class WatchFaceService : WatchFaceService()`, shadowing
-  the androidx base pulled in by the wildcard import at `:10`. It compiles (the subclass wins
-  in-file) but the manifest must name `com.planner1440.watchface.WatchFaceService`.
-- **Legacy vs Watch Face Format — checked on the device, and the news is good.** This is a
-  Jetpack `androidx.wear.watchface` Canvas renderer, not Watch Face Format, and Wear OS 6
-  raised a real question about whether service-based faces still load. Evidence gathered
-  2026-09-24: `dumpsys wallpaper` shows the *currently active* face is
-  `com.samsung.android.watch.watchface.ultrainfoboard/…UltraInfoBoardWatchFaceService`, a
-  `WallpaperService` component, so the service-based architecture is alive on this watch.
-  Samsung ships `com.samsung.wear.watchface.runtime` for WFF; `com.google.wear.watchface.runtime`
-  is absent. **Caveat: those Samsung faces are system apps**, so this is strong evidence,
-  not proof, for a sideloaded third-party face. Install early (verification step 1) and
-  find out before building anything on top of it.
-  - If the APK installs and no face appears in the picker, check the `BIND_WALLPAPER`
-    permission, the `android.service.wallpaper` meta-data and that
-    `@drawable/watch_face_preview` resolves, before suspecting the renderer. The picker is
-    long-press the current face → *Customize* / *Add face*.
-  - If it is genuinely blocked, the fallback is already half-built: keep `DataLayerClient`
-    and `ComplicationHelper.kt` exactly as they are (a listener service and two
-    complication data sources, neither of which is a watch face), and render through
-    `res/raw/watchface.xml` (WFF) fed by those complications. Say so in the PR rather than
-    forcing the Canvas path.
-- **The watch is SDK 36; this code was written for much older Wear.** Two consequences.
-  `androidx.wear.watchface:1.2.1` dates from 2023 — if the face installs but fails to
-  initialise, bump the library before debugging the renderer. And with the app targeting
-  34+ on an SDK 36 device, the `RECEIVER_NOT_EXPORTED` fix below is mandatory, not
-  optional. Set the watch module's `compileSdk` to 35 or 36 even though `targetSdk` can
-  stay at 34.
-- Dependencies the imports require: `androidx.wear.watchface:watchface:1.2.1`,
-  `androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1`,
-  `com.google.android.gms:play-services-wearable:18.2.0`,
-  `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3`. minSdk 30 (Wear OS 3) is fine;
-  the actual device is SDK 36, so nothing here is a floor problem.
-- Manifest needs: `<uses-feature android:name="android.hardware.type.watch"/>`;
-  `<uses-library android:name="com.google.android.wearable" android:required="true"/>`;
-  `<meta-data android:name="com.google.android.wearable.standalone" android:value="false"/>`;
-  the watch face service with `android:permission="android.permission.BIND_WALLPAPER"`, the
-  `android.service.wallpaper.WallpaperService` intent filter and the
-  `android.service.wallpaper` meta-data pointing at `@xml/watch_face_info`; the two
-  complication services with the
-  `android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST` filter and
-  `android.support.wearable.complications.SUPPORTED_TYPES` = `SHORT_TEXT`; `DataLayerClient`
-  exported with `com.google.android.gms.wearable.DATA_CHANGED` and `MESSAGE_RECEIVED`
-  actions plus `<data android:scheme="wear" android:host="*" android:pathPrefix="/1440"/>`.
+**Face selection on the watch.** Our face is favourite id 7. Switch to it with
+`adb -s <watch> shell am broadcast -a com.google.android.wearable.app.DEBUG_SURFACE --es operation set-watchface --es watchFaceId com.planner1440.wff`
+(`result=1`), to the owner's normal face with `--ecn component
+com.samsung.android.watch.watchface.ultrainfoboard/com.samsung.android.watch.watchface.ultrainfoboard.UltraInfoBoardWatchFaceService`.
+Switching away and back re-queries both complications immediately; the 60 s
+`UPDATE_PERIOD_SECONDS` never fired in 2.5 min (assume the 300 s clamp). Watch logs:
+`adb -s <watch> logcat -s 1440:DataLayer 1440:WatchFace DWF:WearComplicationProvider` —
+the last tag prints `[11:TEXT] "…"` / `[12:TEXT] "…"` whenever a slot loads data.
 
-**Where the phone-side native module must live.** `android/` is gitignored (root
-`.gitignore`), so `docs/WATCH_FACE_ROADMAP.md:171-172`'s advice — a module under
-`apps/mobile/android/app/src/main/java/` — would never be committed and any prebuild would
-erase it. Use an **Expo local module** at `apps/mobile/modules/wearable-data-layer/`:
-- `expo-module.config.json`:
-  `{"platforms":["android"],"android":{"modules":["com.planner1440.wearable.WearableDataLayerModule"]}}`
-- `android/build.gradle`: `com.android.library` + `kotlin-android`, `namespace
-  'com.planner1440.wearable'`, `implementation 'com.google.android.gms:play-services-wearable:18.2.0'`
-  (and `expo-modules-core` via the standard `implementation project(':expo-modules-core')`).
-- `android/src/main/java/com/planner1440/wearable/WearableDataLayerModule.kt`: an
-  `expo.modules.kotlin.modules.Module` whose definition has `Name("WearableDataLayer")` and
-  `AsyncFunction("sendSnapshot") { json: String -> … }` doing
-  `PutDataMapRequest.create("/1440/snapshot")`, `dataMap.putString("snapshot_json", json)`,
-  `dataMap.putLong("ts", System.currentTimeMillis())` (the Data Layer only delivers when the
-  bytes change — the timestamp keeps re-sends of an identical snapshot flowing),
-  `.asPutDataRequest().setUrgent()`, then `Wearable.getDataClient(appContext.reactContext!!).putDataItem(...)`.
-- `index.ts`: `export default requireNativeModule<{ sendSnapshot(json: string): Promise<void> }>('WearableDataLayer')`.
-- Autolinking: `expo-modules-autolinking@1.11.3` (root `node_modules`) resolves
-  `nativeModulesDir` to `./modules` by default
-  (`node_modules/expo-modules-autolinking/build/autolinking/mergeLinkingOptions.js:72-79`),
-  and `apps/mobile/android/settings.gradle:58` already calls
-  `useExpoModules(exclude: ['expo-linking'])`, so the module links with **no** edit to the
-  hand-maintained `settings.gradle`. Confirm in the build log that a
-  `:wearable-data-layer:…` task runs.
-- `syncAndroid()` becomes `try { await WearableDataLayer.sendSnapshot(JSON.stringify(snapshot)) } catch (e) { … }`
-  with the dev log kept.
+**Timer-driven resync — where it goes.** Add it in `_layout.tsx` next to the existing
+subscription: a `setInterval` (60 s, cleared on unmount) and an `AppState` → `active`
+hook that both call the same `sendNow()` used by the subscription; build the snapshot from
+`useCalendarStore.getState()` / `useSettingsStore.getState()` so it does not depend on the
+render closure. The `ts` key in the DataItem already guarantees delivery of identical
+payloads. Consider also sending on watch (re)connect via `CapabilityClient` — optional.
+`buildWatchSnapshot` (`watchSync.ts:24-63`) is the contract; bump `version` if you add a
+field.
 
-**Wearable Data Layer requirements.** Both APKs must be signed with the same certificate
-(the debug keystore on both is fine for development) and the watch must be paired with this
-phone. Different `applicationId`s are fine on Wear OS 3+. Use `com.planner1440.watchface`
-for the watch (matches the Kotlin package).
-
-**Watch Gradle layout.** A standalone project: `watch/android-wearos/settings.gradle`
-(`pluginManagement` with `google()`/`mavenCentral()`, `include ':app'`), `build.gradle`
-(`plugins { id 'com.android.application' version '8.2.1' apply false; id
-'org.jetbrains.kotlin.android' version '1.9.23' apply false }`), `app/build.gradle`
-(`namespace 'com.planner1440.watchface'`, compileSdk 34, minSdk 30, targetSdk 34),
-`gradle.properties` (`android.useAndroidX=true`, the same `org.gradle.java.home` line as the
-phone build), and the wrapper (`gradle/wrapper/*`, `gradlew`, `gradlew.bat`) copied from
-`apps/mobile/android/` — those are gitignored only under `apps/mobile/android/`; commit them
-under `watch/android-wearos/`.
+**Traps.**
+- `npx tsc -p apps/mobile` fails on `.expo/types/router.d.ts` if files were created outside
+  `src/app` while Metro ran; restart Metro, re-run (`CLAUDE.md`).
+- PowerShell strips the quotes off `adb shell run-as … sh -c '…'`; call the binary
+  directly (`run-as com.planner1440.app cp …`).
+- The face picker closes on fast swipes; the recipe uses 400 ms swipes with 1.5 s pauses.
+- The watch's `shared_prefs/1440_watch.xml` currently holds the pass-5 **fake** snapshot
+  (`FakeStandup 3:30 PM`, `countMode: down`); the first real snapshot overwrites it — that
+  is also your visual proof of delivery.
 
 ## Constraints
 
 - No `prebuild --clean`, no edits to `metro.config.js` or the two hand-edited files in
-  `android/` (`CLAUDE.md`). A plain `npx expo run:android` picks up the local module.
-- `packages/core` untouched. `WatchSnapshot` (`watchSync.ts:6-21`) is the contract; if the
-  watch needs a new field, add it in `buildWatchSnapshot` and bump `version`.
-- Android only. `syncIOS()` stays a stub; `watch/apple-watchos` is a later pass.
-- The face's *look* is out of scope — it only has to render the snapshot it receives.
-- Design tokens are irrelevant on the watch side, but do not add new hex values to the app.
+  `android/` (`CLAUDE.md`). Native changes on the phone stay inside `apps/mobile/modules/`.
+- `packages/core` untouched unless the snapshot needs a new field.
+- Android only; `syncIOS()` stays a stub (WatchConnectivity is a later pass).
+- The WFF face's look and per-block arcs are out of scope (STATUS Known debt).
 
-## Verification (required; `<watch>` is the physical watch's `<ip>:5555`, or the emulator if it came to that — say which)
+## Verification (required; `<watch>` = `192.168.1.68:<port>`)
 
-0. `adb devices` lists both `R5CY72XEJKD` and `<watch>`, and the model/SDK/`wm size`
-   readout from prerequisite 3 is recorded in the memory note.
-1. `cd watch/android-wearos; .\gradlew :app:assembleDebug` succeeds; `adb -s <watch> install -r`
-   the APK; the face is selectable on the watch. Screenshot it (`adb -s <watch> shell screencap`).
-2. Phone rebuild log shows `:wearable-data-layer:compileDebugKotlin` (or similar) and the app
-   cold-starts on Day.
-3. Create or move a block on today → phone logcat `[watchSync:android] <min> min` → watch
-   logcat (`adb -s <watch> logcat -s 1440:DataLayer 1440:WatchFace`) shows
-   `Received snapshot, currentMinute=…` and the face redraws with the new arc.
-4. Delete the block → the arc disappears on the watch.
-5. `am force-stop com.planner1440.watchface` on the watch → the minute-counter complication
-   still shows a value (SharedPreferences path, `ComplicationHelper.kt:49-53`).
-6. `npx tsc --noEmit -p apps/mobile` still clean (type the module's export in `index.ts`).
+0. `adb devices` lists both `R5CY72XEJKD` and `<watch>`.
+1. Install the phone APK, cold-start (`am force-stop` + launcher) → Day. Phone logcat
+   (`adb -s R5CY72XEJKD logcat -s ReactNativeJS 1440:WatchSync`) shows no
+   `native module missing`.
+2. Create a block on **today** at least 30 min in the future (recipe: `+ BLOCK` FAB at
+   (1212, 2755), title, START, SCHEDULE BLOCK at (719, 2917)) → phone logcat
+   `[watchSync:android] <min> min, N events` and `1440:WatchSync putDataItem ok` → watch
+   logcat `1440:DataLayer Received snapshot, currentMinute=<min>` → the face's next-block
+   slot shows that title + time (screenshot: `screencap -p /sdcard/x.png` + `pull`).
+3. Delete the block → watch logcat again → slot shows `No blocks` (or the next real one).
+4. Toggle Settings → count mode → the centre slot title flips between `MIN ELAPSED` and
+   `MIN LEFT` (a settings change alone does **not** trigger the calendar subscription — if
+   it does not flip, that is the timer's job; confirm it flips within 60 s once the timer
+   is in).
+5. Timer: with no edits, watch logcat shows a `Received snapshot` line about once a minute
+   while the app is foregrounded, and one on foreground after backgrounding.
+6. `am force-stop com.planner1440.app` on the watch → complications still show values.
+7. `npx tsc --noEmit -p apps/mobile` clean; `watch/android-wearos` still builds if touched.
 
 ## Wrap-up
 
-- Conventional Commits, e.g. `feat(watch): gradle project, manifest and preview for the
-  Wear OS face`, `fix(watch): RECEIVER_NOT_EXPORTED for the snapshot receiver`,
-  `feat(watch-sync): WearableDataLayer local Expo module`, `feat(watch-sync): send
-  snapshots over the Data Layer on Android`, `docs: …`.
+- Conventional Commits, e.g. `feat(watch-sync): resync every minute and on foreground`,
+  `docs: pass-6 verification of phone → watch delivery`.
 - Push, open a PR through the GitHub API (no `gh`; recipe in the memory note), **do not
-  merge**. PR description: what changed, why the local-module layout instead of
-  `android/app/src/main/java`, which watch target was used, verification with logcat
-  excerpts, anything left undone (timer-driven resync, iOS, WFF vs Canvas).
-- `docs/STATUS.md`: TL;DR PR count and open branch; rewrite the two "Scaffolded but NOT
-  wired" rows; add "(PR #N, merged `sha`)" to the pass-4 heading; remove "Next up" #1 and
-  renumber; add a pass-5 log entry; replace this section with the pass-6 handoff prompt
-  (candidates: SDK upgrade off 51, or timer-driven watch resync + `syncIOS` via
-  WatchConnectivity).
-- Update the `device-and-tooling` memory note with the watch's model, Android/Wear version,
-  resolution and IP, the connect flow that actually worked (`:5555` vs `adb pair`), and how
-  long the Wi-Fi link survives once the watch is off the charger.
+  merge**. PR description: what was verified with logcat excerpts and screenshots, what the
+  timer does, anything left (iOS, arcs).
+- `docs/STATUS.md`: TL;DR PR count and open branch; "Watch sync transport" row → verified;
+  remove the "Phone → watch delivery is unverified" Known-debt paragraph; add
+  "(PR #16, merged `sha`)" to the pass-5 heading; renumber "Next up"; pass-6 log entry;
+  replace this section with the pass-7 handoff (candidates: SDK upgrade off 51; per-block
+  arcs on the WFF face via `RANGED_VALUE` slots; `syncIOS` via WatchConnectivity).
+- Update the `device-and-tooling` memory note with whether the phone's USB link held,
+  whether `adb tcpip` was enabled, and how long the watch's Wi-Fi ADB session lasted.

@@ -161,3 +161,30 @@ always out-of-date — it is not the one this build uses.)
   any child that accepts touches makes the computed minute wrong.
 - No test framework is configured, and there is no `check`/`lint` script. Verify changes by
   running the app on a device.
+- **`npx tsc -p apps/mobile` can fail on `.expo/types/router.d.ts` after you create files
+  outside `src/app` while Metro is running** (expo-router's typed-routes watcher writes
+  backslash "routes" for them). Not a real error: restart Metro, which regenerates the file,
+  then re-run `tsc`. Found in pass 5.
+- Native code for the phone goes in an **Expo local module under `apps/mobile/modules/`**,
+  never under `apps/mobile/android/` (gitignored, erased by prebuild). Root `.gitignore`
+  has a bare `android/` rule and a `!apps/mobile/modules/**/android/` negation for exactly
+  this — keep both.
+
+---
+
+## Watch — `watch/android-wearos`
+
+- Two Gradle modules: **`:app`** (the code — Data Layer listener, complication data
+  sources, an androidx Canvas face) and **`:wff`** (a no-code Watch Face Format face). Build
+  with `.\gradlew :app:assembleDebug :wff:assembleDebug` from that directory.
+- **Wear OS 5+ launch devices block third-party androidx/Canvas faces.** The owner's Galaxy
+  Watch 7 logs `WatchFacesRestrictionManagerImpl … is blocked` for `WatchFaceService.kt`
+  and never lists it. Only the `:wff` face renders there; do not debug the Canvas renderer
+  on that device.
+- `:app`'s `applicationId` **must equal the phone's** (`com.planner1440.app`) and both must
+  sign with `app/debug.keystore` (a copy of the phone's RN debug keystore): the Wearable
+  Data Layer only routes between the two halves of one app.
+- `wff/src/main/res/raw/watchface.xml` and the preview/icon PNGs are **generated** —
+  `tools/make-watchface.ps1` and `tools/make-preview.ps1`. Edit the generators.
+- Wi-Fi ADB only (pairing-code flow); connect details, the first-time picker recipe and the
+  `DEBUG_SURFACE` switch broadcast are in the watch README and `docs/STATUS.md`.

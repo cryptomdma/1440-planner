@@ -155,21 +155,23 @@ override fun onDataChanged(dataEvents: DataEventBuffer) {
 
 ### React Native Bridge
 
-The phone app calls watch sync via a native module:
+The phone app calls watch sync via a native module. **As built in pass 5:** an Expo
+*local module* at `apps/mobile/modules/wearable-data-layer/` (autolinked from `modules/`,
+no edit to the hand-maintained `android/settings.gradle`), consumed by
+`apps/mobile/src/services/watchSync.ts`:
 
 ```ts
-// apps/mobile/src/services/watchSync.ts
-import { NativeModules } from 'react-native';
-const { WearOSSyncModule } = NativeModules;
-
-export const sendDaySnapshot = async (events, currentMinute) => {
-  if (!WearOSSyncModule) return; // not available on iOS
-  await WearOSSyncModule.sendSnapshot(JSON.stringify(events), currentMinute);
-};
+import WearableDataLayer from '../../modules/wearable-data-layer';   // null on an old APK
+await WearableDataLayer.sendSnapshot(JSON.stringify(snapshot));      // DataItem /1440/snapshot
 ```
 
-Create `WearOSSyncModule` as a standard React Native native module in
-`apps/mobile/android/app/src/main/java/com/planner1440/`.
+Do **not** put the module under `apps/mobile/android/app/src/main/java/` — `android/` is
+gitignored and any prebuild erases it.
+
+> **Wear OS 5+ launch devices block third-party androidx/Canvas watch faces.** The Galaxy
+> Watch 7 refuses `WatchFaceService.kt` outright, so the face that ships is the Watch Face
+> Format package in `watch/android-wearos/wff/`, fed by the complication data sources in
+> `watch/android-wearos/app/`. See that directory's README.
 
 ### Complications
 
