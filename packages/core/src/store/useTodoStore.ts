@@ -3,14 +3,19 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import type { StateStorage } from 'zustand/middleware';
 import type { Todo } from '../types/todo';
 
-let _storage: StateStorage = {
+// Placeholder until the platform injects a real adapter via initTodoStorage().
+// createJSONStorage() resolves its argument once, at store creation, so the real
+// adapter must be swapped in through persist.setOptions() — reassigning a module
+// variable silently never persisted anything.
+const NOOP_STORAGE: StateStorage = {
   getItem:    () => null,
   setItem:    () => {},
   removeItem: () => {},
 };
 
 export function initTodoStorage(adapter: StateStorage) {
-  _storage = adapter;
+  useTodoStore.persist.setOptions({ storage: createJSONStorage(() => adapter) });
+  void useTodoStore.persist.rehydrate();
 }
 
 interface TodoState {
@@ -58,7 +63,9 @@ export const useTodoStore = create<TodoState>()(
     }),
     {
       name: '1440-planner-todos-v1',
-      storage: createJSONStorage(() => _storage),
+      storage: createJSONStorage(() => NOOP_STORAGE),
+      // Hydrated explicitly by initTodoStorage() once a real adapter exists
+      skipHydration: true,
     }
   )
 );

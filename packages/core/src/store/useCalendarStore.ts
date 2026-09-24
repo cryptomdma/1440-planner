@@ -3,15 +3,19 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import type { StateStorage } from 'zustand/middleware';
 import type { CalendarEvent } from '../types/event';
 
-// Injected before first component mount (see services/storage.ts → initAllStores)
-let _storage: StateStorage = {
+// Placeholder until the platform injects a real adapter via initCalendarStorage()
+// (see services/storage.ts → initAllStores). createJSONStorage() resolves its
+// argument once, at store creation, so the real adapter must be swapped in through
+// persist.setOptions() — reassigning a module variable silently never persisted.
+const NOOP_STORAGE: StateStorage = {
   getItem:    () => null,
   setItem:    () => {},
   removeItem: () => {},
 };
 
 export function initCalendarStorage(adapter: StateStorage) {
-  _storage = adapter;
+  useCalendarStore.persist.setOptions({ storage: createJSONStorage(() => adapter) });
+  void useCalendarStore.persist.rehydrate();
 }
 
 interface CalendarState {
@@ -59,7 +63,9 @@ export const useCalendarStore = create<CalendarState>()(
     }),
     {
       name: '1440-planner-calendar-v1',
-      storage: createJSONStorage(() => _storage),
+      storage: createJSONStorage(() => NOOP_STORAGE),
+      // Hydrated explicitly by initCalendarStorage() once a real adapter exists
+      skipHydration: true,
     }
   )
 );
