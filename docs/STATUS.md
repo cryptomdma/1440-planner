@@ -393,19 +393,20 @@ context, use it.
    with the S25+ over Bluetooth). ADB debugging **and** "Debugging over Wi-Fi" were enabled
    on it on 2026-09-24. A Galaxy Watch charges on pogo pins and has no USB data path, so
    **Wi-Fi ADB is the only way in**; there is no Bluetooth debugging on Wear OS 3+.
-   - **It was not reachable when pass 4 closed, and that is expected.** A TCP probe of every
-     host on `192.168.1.0/24` found nothing listening on 5555, and `adb mdns services`
-     listed nothing. PC is `192.168.1.80`, phone is `192.168.1.91`. Galaxy Watches park
-     their Wi-Fi radio whenever the screen is off and the phone is in Bluetooth range, so
-     the port only exists while the watch is awake and actually on Wi-Fi. Treat a silent
-     subnet as "watch asleep", not "setup broken".
-   - **Connect:** put the watch on its charger, wake it, confirm Settings → Connections →
-     Wi-Fi shows the same network, then read the address under Developer options →
-     Debugging over Wi-Fi. Also turn on Developer options → *Stay awake while charging*, or
-     the connection dies mid-session.
-     - Address ends in `:5555` → `adb connect <ip>:5555`.
-     - Address shows a high random port plus a *Pair new device* entry → Android 11+ flow:
-       `adb pair <ip>:<pair-port>` with the 6-digit code, then `adb connect <ip>:<connect-port>`.
+   - **It connects, and the flow is the pairing-code one, not `:5555`.** Established
+     2026-09-24. Developer options → Wi-Fi debugging shows *two different* ports: the
+     pairing port inside the "Pair new device" dialog and the connect port on the main
+     screen. Both are random per session; the IP has been stable at `192.168.1.68`.
+     ```
+     adb pair 192.168.1.68:<pair-port> <6-digit-code>
+     adb connect 192.168.1.68:<connect-port>     # was :44881 on 2026-09-24
+     ```
+   - **Keep it awake.** Put the watch on its charger and turn on Developer options → *Stay
+     awake while charging*, or the radio sleeps and the session dies mid-build.
+   - **A silent subnet means asleep, not broken.** Before the watch was woken, a TCP probe
+     of all 254 hosts on `192.168.1.0/24` found nothing and `adb mdns services` listed
+     nothing. Galaxy Watches park Wi-Fi when the screen is off and the phone is in
+     Bluetooth range. PC is `192.168.1.80`, phone `192.168.1.91`.
    - **Re-probe helper** (this is the exact scan pass 4 ran; adjust the subnet if it moved):
      ```powershell
      $p = foreach ($i in 1..254) { $ip = "192.168.1.$i"; $c = New-Object Net.Sockets.TcpClient
@@ -413,13 +414,19 @@ context, use it.
      Start-Sleep -Milliseconds 2500
      foreach ($x in $p) { if ($x.AR.IsCompleted) { try { $x.C.EndConnect($x.AR); if ($x.C.Connected) { $x.IP } } catch {} }; $x.C.Close() }
      ```
-   - **Record what it actually is.** Nobody has read the hardware yet. Once connected:
-     `adb -s <watch> shell getprop ro.product.model` (SM-R87x = Watch 4, R91x = Watch 5,
-     R94x = Watch 6, L31x = Watch 7), plus `getprop ro.build.version.sdk` and `wm size`
-     (44mm panels are 450x450 on Watch 4/5, 480x480 on Watch 6/7). Put these in the
-     `device-and-tooling` memory note — the whole pass depends on them and they cost one
-     command.
-   - `adb devices` then lists both; every watch command below uses `-s <ip>:5555`.
+   - **What it is** (read off the device 2026-09-24, do not re-derive):
+
+     | | |
+     |---|---|
+     | Model | Samsung Galaxy Watch 7 44mm, `SM-L310`, device `fresh7bl` |
+     | OS | Android **16**, SDK **36**, `ro.cw_build.wear_sdk.version=7` (Wear OS 6) |
+     | Screen | **480x480**, density 340 |
+     | ABI | `armeabi-v7a` (32-bit; only matters if a module ships native libs) |
+     | Data Layer | `com.google.android.gms` + `com.google.android.wearable.app` installed |
+
+     This is a **much newer OS than the target the watch code was written against**, which
+     drives the two version notes in the traps list below. Budget for it.
+   - `adb devices` then lists both; every watch command below uses `-s 192.168.1.68:<port>`.
    - **Fallback, only if the watch stays unreachable:** a Wear OS emulator. `Sdk\cmdline-tools`
      is **not installed** (only `Sdk\emulator\emulator.exe` exists), so build the AVD from
      Android Studio's Device Manager: Wear OS **Large Round** (454x454, the profile that
@@ -483,17 +490,36 @@ compilation fails until a PNG exists. Both watch `README.md` files are 0 bytes.
 - `WatchFaceService.kt:29` declares `class WatchFaceService : WatchFaceService()`, shadowing
   the androidx base pulled in by the wildcard import at `:10`. It compiles (the subclass wins
   in-file) but the manifest must name `com.planner1440.watchface.WatchFaceService`.
-- **On a real Galaxy Watch the face has to survive One UI's picker.** This is a Jetpack
-  `androidx.wear.watchface` Canvas renderer, not Watch Face Format. Sideloaded Jetpack
-  faces still run on current Wear OS, but Samsung's picker is fussier than the emulator's:
-  if the APK installs and no face appears, check the `BIND_WALLPAPER` permission, the
-  `android.service.wallpaper` meta-data, and that `@drawable/watch_face_preview` resolves,
-  before assuming the renderer is wrong. On the watch, the picker is long-press on the
-  current face → *Customize* / *Add face*.
+- **Legacy vs Watch Face Format — checked on the device, and the news is good.** This is a
+  Jetpack `androidx.wear.watchface` Canvas renderer, not Watch Face Format, and Wear OS 6
+  raised a real question about whether service-based faces still load. Evidence gathered
+  2026-09-24: `dumpsys wallpaper` shows the *currently active* face is
+  `com.samsung.android.watch.watchface.ultrainfoboard/…UltraInfoBoardWatchFaceService`, a
+  `WallpaperService` component, so the service-based architecture is alive on this watch.
+  Samsung ships `com.samsung.wear.watchface.runtime` for WFF; `com.google.wear.watchface.runtime`
+  is absent. **Caveat: those Samsung faces are system apps**, so this is strong evidence,
+  not proof, for a sideloaded third-party face. Install early (verification step 1) and
+  find out before building anything on top of it.
+  - If the APK installs and no face appears in the picker, check the `BIND_WALLPAPER`
+    permission, the `android.service.wallpaper` meta-data and that
+    `@drawable/watch_face_preview` resolves, before suspecting the renderer. The picker is
+    long-press the current face → *Customize* / *Add face*.
+  - If it is genuinely blocked, the fallback is already half-built: keep `DataLayerClient`
+    and `ComplicationHelper.kt` exactly as they are (a listener service and two
+    complication data sources, neither of which is a watch face), and render through
+    `res/raw/watchface.xml` (WFF) fed by those complications. Say so in the PR rather than
+    forcing the Canvas path.
+- **The watch is SDK 36; this code was written for much older Wear.** Two consequences.
+  `androidx.wear.watchface:1.2.1` dates from 2023 — if the face installs but fails to
+  initialise, bump the library before debugging the renderer. And with the app targeting
+  34+ on an SDK 36 device, the `RECEIVER_NOT_EXPORTED` fix below is mandatory, not
+  optional. Set the watch module's `compileSdk` to 35 or 36 even though `targetSdk` can
+  stay at 34.
 - Dependencies the imports require: `androidx.wear.watchface:watchface:1.2.1`,
   `androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1`,
   `com.google.android.gms:play-services-wearable:18.2.0`,
-  `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3`. minSdk 30 (Wear OS 3).
+  `org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3`. minSdk 30 (Wear OS 3) is fine;
+  the actual device is SDK 36, so nothing here is a floor problem.
 - Manifest needs: `<uses-feature android:name="android.hardware.type.watch"/>`;
   `<uses-library android:name="com.google.android.wearable" android:required="true"/>`;
   `<meta-data android:name="com.google.android.wearable.standalone" android:value="false"/>`;
