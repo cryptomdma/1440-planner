@@ -72,9 +72,12 @@ export default function DayGrid({
         onLongPress={handleLongPress}
         delayLongPress={400}
       >
-        {/* Wake/sleep shading */}
-        <View style={[s.shade, { top: 0, height: wakeMinute * PPM }]} />
-        <View style={[s.shade, { top: sleepMinute * PPM, height: (MINUTES_IN_DAY - sleepMinute) * PPM }]} />
+        {/* Wake/sleep shading. pointerEvents="none" so a long-press inside the
+            shaded hours still targets the grid: locationY is relative to the
+            touched view, and with the shade as target it read as minutes from
+            the shade's top, not from midnight. */}
+        <View style={[s.shade, { top: 0, height: wakeMinute * PPM }]} pointerEvents="none" />
+        <View style={[s.shade, { top: sleepMinute * PPM, height: (MINUTES_IN_DAY - sleepMinute) * PPM }]} pointerEvents="none" />
 
         {/* Ruler + grid lines */}
         <TimelineRuler countMode={countMode} />
