@@ -1,0 +1,25 @@
+// Expo local module (autolinked from apps/mobile/modules by expo-modules-autolinking; no
+// entry in the hand-maintained android/settings.gradle is needed). Same shape as the
+// modules shipped in node_modules, e.g. expo-haptics/android/build.gradle.
+apply plugin: 'com.android.library'
+
+group = 'com.planner1440'
+version = '0.1.0'
+
+def expoModulesCorePlugin = new File(project(":expo-modules-core").projectDir.absolutePath, "ExpoModulesCorePlugin.gradle")
+apply from: expoModulesCorePlugin
+applyKotlinExpoModulesCorePlugin()
+useCoreDependencies()
+useDefaultAndroidSdkVersions()
+
+android {
+  namespace 'com.planner1440.wearable'
+  defaultConfig {
+    versionCode 1
+    versionName '0.1.0'
+  }
+}
+
+dependencies {
+  implementation 'com.google.android.gms:play-services-wearable:18.2.0'
+}
