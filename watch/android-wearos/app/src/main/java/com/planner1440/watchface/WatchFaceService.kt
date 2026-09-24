@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.*
+import android.os.Build
 import android.util.Log
 import android.view.SurfaceHolder
 import androidx.wear.watchface.*
@@ -26,7 +27,10 @@ import kotlin.math.*
  *   - Minute hand at 1440-position
  *   - Center dial: minute counter + mode label + clock time
  */
-class WatchFaceService : WatchFaceService() {
+// Same simple name as the androidx base, so the base must be fully qualified — an
+// unqualified `WatchFaceService()` here resolves to this class and the compiler reports an
+// inheritance cycle. The manifest names this class: com.planner1440.watchface.WatchFaceService.
+class WatchFaceService : androidx.wear.watchface.WatchFaceService() {
 
     companion object {
         private const val TAG = "1440:WatchFace"
@@ -52,15 +56,20 @@ class WatchFaceService : WatchFaceService() {
         CanvasType.HARDWARE, 30_000L, clearWithBackgroundTintBeforeRenderingHighlightLayer = false
     ) {
 
-        private var snapshot: JSONObject? = null
+        // Start from the last snapshot DataLayerClient persisted (the copy the complications
+        // read too), so a face that is re-selected or restarted shows the arcs before the
+        // phone's next edit arrives.
+        private var snapshot: JSONObject? = ctx
+            .getSharedPreferences(DataLayerClient.PREFS_NAME, Context.MODE_PRIVATE)
+            .getString(DataLayerClient.PREFS_KEY, null)
+            ?.let { json -> try { JSONObject(json) } catch (e: Exception) { null } }
+
         private val snapshotReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 val json = intent.getStringExtra(DataLayerClient.EXTRA_SNAPSHOT) ?: return
                 try {
                     snapshot = JSONObject(json)
-                    // Persist for complication providers
-                    ctx.getSharedPreferences("1440_watch", Context.MODE_PRIVATE)
-                        .edit().putString("snapshot", json).apply()
+                    Log.d(TAG, "Snapshot applied, events=${snapshot?.optJSONArray("events")?.length() ?: 0}")
                     invalidate()
                 } catch (e: Exception) {
                     Log.e(TAG, "Bad snapshot JSON", e)
@@ -69,10 +78,16 @@ class WatchFaceService : WatchFaceService() {
         }
 
         init {
-            ctx.registerReceiver(
-                snapshotReceiver,
-                IntentFilter(DataLayerClient.ACTION_SNAPSHOT_UPDATED)
-            )
+            val filter = IntentFilter(DataLayerClient.ACTION_SNAPSHOT_UPDATED)
+            // targetSdk 34 on Android 14+ throws SecurityException for a receiver of
+            // non-system broadcasts registered without an export flag. The broadcast comes
+            // from DataLayerClient in this same package, so NOT_EXPORTED is the right one.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ctx.registerReceiver(snapshotReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                ctx.registerReceiver(snapshotReceiver, filter)
+            }
         }
 
         override suspend fun createSharedAssets(): Renderer.SharedAssets =

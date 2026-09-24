@@ -12,8 +12,9 @@ import org.json.JSONObject
  *   Slot 1 — SHORT_TEXT: current minute counter (elapsed or remaining)
  *   Slot 2 — SHORT_TEXT: next block title + start time
  *
- * Reads the latest WatchSnapshot from SharedPreferences (written by WatchFaceService
- * when it receives a broadcast from DataLayerClient).
+ * Reads the latest WatchSnapshot from SharedPreferences (written by DataLayerClient when
+ * the phone's DataItem arrives). On Wear OS 5+ launch devices these two are what the
+ * Watch Face Format face in ../wff shows, since the androidx Canvas face is blocked there.
  */
 class MinuteCounterComplicationService : SuspendingComplicationDataSourceService() {
 
@@ -29,7 +30,11 @@ class MinuteCounterComplicationService : SuspendingComplicationDataSourceService
         if (request.complicationType != ComplicationType.SHORT_TEXT) return null
         val snapshot = loadSnapshot() ?: return buildDefault()
 
-        val currentMinute  = snapshot.optInt("currentMinute", 0)
+        // The phone only sends on calendar edits, so its currentMinute goes stale within
+        // a minute; take the minute from the watch clock and only the count mode from the
+        // snapshot. UPDATE_PERIOD_SECONDS=60 in the manifest keeps this ticking.
+        val now            = java.time.LocalTime.now()
+        val currentMinute  = now.hour * 60 + now.minute
         val countMode      = snapshot.optString("countMode", "up")
         val displayMinute  = if (countMode == "down") 1440 - currentMinute else currentMinute
 
@@ -38,7 +43,9 @@ class MinuteCounterComplicationService : SuspendingComplicationDataSourceService
             contentDescription = PlainComplicationText.Builder(
                 if (countMode == "down") "Minutes remaining" else "Minutes elapsed"
             ).build()
-        ).build()
+        )
+            .setTitle(PlainComplicationText.Builder(if (countMode == "down") "MIN LEFT" else "MIN ELAPSED").build())
+            .build()
     }
 
     private fun buildDefault() = ShortTextComplicationData.Builder(
@@ -46,11 +53,11 @@ class MinuteCounterComplicationService : SuspendingComplicationDataSourceService
         contentDescription = PlainComplicationText.Builder("1440 Planner").build()
     ).build()
 
-    private fun loadSnapshot(): JSONObject? = try {
-        val prefs = getSharedPreferences("1440_watch", MODE_PRIVATE)
-        val json  = prefs.getString("snapshot", null) ?: return null
-        JSONObject(json)
-    } catch (e: Exception) { null }
+    private fun loadSnapshot(): JSONObject? {
+        val prefs = getSharedPreferences(DataLayerClient.PREFS_NAME, MODE_PRIVATE)
+        val json  = prefs.getString(DataLayerClient.PREFS_KEY, null) ?: return null
+        return try { JSONObject(json) } catch (e: Exception) { null }
+    }
 }
 
 class NextBlockComplicationService : SuspendingComplicationDataSourceService() {
@@ -82,9 +89,9 @@ class NextBlockComplicationService : SuspendingComplicationDataSourceService() {
         contentDescription = PlainComplicationText.Builder("No upcoming blocks").build()
     ).build()
 
-    private fun loadSnapshot(): JSONObject? = try {
-        val prefs = getSharedPreferences("1440_watch", MODE_PRIVATE)
-        val json  = prefs.getString("snapshot", null) ?: return null
-        JSONObject(json)
-    } catch (e: Exception) { null }
+    private fun loadSnapshot(): JSONObject? {
+        val prefs = getSharedPreferences(DataLayerClient.PREFS_NAME, MODE_PRIVATE)
+        val json  = prefs.getString(DataLayerClient.PREFS_KEY, null) ?: return null
+        return try { JSONObject(json) } catch (e: Exception) { null }
+    }
 }
