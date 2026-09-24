@@ -15,7 +15,8 @@
       "package": "com.planner1440.app",
       "adaptiveIcon": {
         "backgroundColor": "#07090f"
-      }
+      },
+      "permissions": ["android.permission.USE_EXACT_ALARM"]
     },
     "ios": {
       "bundleIdentifier": "com.planner1440.app",
