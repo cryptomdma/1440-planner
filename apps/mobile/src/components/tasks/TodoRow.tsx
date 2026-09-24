@@ -5,26 +5,25 @@ import type { Todo } from '@1440/core';
 
 interface Props {
   todo:       Todo;
-  isPicking:  boolean;
   onDone:     (id: string) => void;
   onDelete:   (id: string) => void;
   onSchedule: (todo: Todo) => void;
   onPick:     (todo: Todo) => void;
 }
 
-export default function TodoRow({ todo, isPicking, onDone, onDelete, onSchedule, onPick }: Props) {
+export default function TodoRow({ todo, onDone, onDelete, onSchedule, onPick }: Props) {
   if (!todo) return null;
   const cat        = CATEGORIES.find(c => c.id === todo.categoryId);
   const pri        = PRIORITIES.find(p => p.id === todo.priority);
   const isScheduled = todo.status === 'scheduled';
   const isDone      = todo.status === 'done';
 
-  const borderLeftColor = isDone ? C.L4 : isPicking ? cat?.color : isScheduled ? '#34D399' : pri?.color ?? '#fff';
+  const borderLeftColor = isDone ? C.L4 : isScheduled ? '#34D399' : pri?.color ?? '#fff';
 
   return (
     <View style={[
       s.row,
-      { borderColor: isPicking ? `${cat?.color}60` : isScheduled ? '#1a3d2a' : C.border },
+      { borderColor: isScheduled ? '#1a3d2a' : C.border },
       { borderLeftColor },
       isDone && s.rowDone,
     ]}>
@@ -52,7 +51,6 @@ export default function TodoRow({ todo, isPicking, onDone, onDelete, onSchedule,
           <Text style={[s.priTag, { color: pri?.color }]}>{pri?.label}</Text>
           <Text style={s.durTag}>{todo.durationMinutes}m</Text>
           {isScheduled && <Text style={s.calTag}>on calendar</Text>}
-          {isPicking   && <Text style={[s.calTag, { color: cat?.color }]}>PLACING →</Text>}
         </View>
       </View>
 
@@ -62,11 +60,8 @@ export default function TodoRow({ todo, isPicking, onDone, onDelete, onSchedule,
           <Pressable style={s.autoBtn} onPress={() => onSchedule(todo)}>
             <Text style={s.autoBtnText}>AUTO</Text>
           </Pressable>
-          <Pressable
-            style={[s.pickBtn, isPicking && s.pickBtnActive]}
-            onPress={() => onPick(todo)}
-          >
-            <Text style={s.pickBtnText}>{isPicking ? '✕' : 'PICK'}</Text>
+          <Pressable style={s.pickBtn} onPress={() => onPick(todo)}>
+            <Text style={s.pickBtnText}>PICK</Text>
           </Pressable>
           <Pressable style={s.delBtn} onPress={() => onDelete(todo.id)}>
             <Text style={s.delBtnText}>✕</Text>
@@ -120,9 +115,8 @@ const s = StyleSheet.create({
   actions:   { flexDirection: 'row', gap: 4, flexShrink: 0 },
   autoBtn:   { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 3, backgroundColor: 'rgba(52,211,153,0.15)', borderWidth: 1, borderColor: '#34D399' },
   autoBtnText: { fontSize: 9, color: '#34D399', fontWeight: '700' },
-  pickBtn:     { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 3, backgroundColor: 'rgba(56,189,248,0.12)', borderWidth: 1, borderColor: '#38BDF8' },
-  pickBtnActive: { backgroundColor: 'rgba(56,189,248,0.3)' },
-  pickBtnText: { fontSize: 9, color: '#38BDF8', fontWeight: '700' },
+  pickBtn:     { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 3, backgroundColor: 'rgba(56,189,248,0.12)', borderWidth: 1, borderColor: C.cyan },
+  pickBtnText: { fontSize: 9, color: C.cyan, fontWeight: '700' },
   delBtn:      { paddingHorizontal: 7, paddingVertical: 3, borderRadius: 3, borderWidth: 1, borderColor: C.border },
   delBtnText:  { fontSize: 11, color: C.L3 },
 });

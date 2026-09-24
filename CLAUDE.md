@@ -39,8 +39,12 @@ Work happens in **1–2 passes per session**, so continuity matters more than sp
 
 - Start by reading `docs/STATUS.md` — it is the source of truth for project state.
 - **End every session by updating `docs/STATUS.md`** with what changed and what's next.
-- Leave a handoff note proposing the next pass, with enough detail that a fresh session can
-  act on it without re-deriving context.
+- **End every session by writing the *next* session's handoff prompt.** It is the final
+  section of `docs/STATUS.md`, titled `## 🤝 Handoff prompt (pass N+1)`, and it
+  **replaces** the previous one each session. Use the format that section already has:
+  prerequisites (Metro/device/branch checks), goal, findings-do-not-re-derive (with
+  file-and-line citations), constraints, verification steps, wrap-up. It must be detailed
+  enough that a fresh session can act on it without re-deriving context.
 - Cite files as `path/to/file.ts:42` so they're clickable.
 
 ---
@@ -147,5 +151,13 @@ always out-of-date — it is not the one this build uses.)
 - Time is **minutes from midnight (0–1439)**, not clock time. Convert only at the display
   edge, via the helpers in `packages/core/src/utils/time.ts`.
 - Grid constants (`PPM`, `BLOCK_SIZE`, `RULER_W`) come from core — never inline them.
+- **No dynamic `import()` in `packages/core`.** Metro serves a lazy import as a split bundle
+  whose URL is the path relative to `apps/mobile`; for core that is `..\..\packages\core\…`
+  and the dev server rejects it (`Failed to load split bundle`, a "Possible unhandled
+  promise rejection" toast, and the code after the import silently never runs). Use static
+  imports — there are no cycles between the stores. Found in pass 4.
+- Touch targets inside `DayGrid`'s long-press `Pressable` must be `pointerEvents="none"`
+  (shading, ruler, now-line). `nativeEvent.locationY` is relative to the *touched* view, so
+  any child that accepts touches makes the computed minute wrong.
 - No test framework is configured, and there is no `check`/`lint` script. Verify changes by
   running the app on a device.

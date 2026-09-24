@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import type { StateStorage } from 'zustand/middleware';
 import type { CalendarEvent } from '../types/event';
+// Static import is safe: useTodoStore imports nothing from this module, so
+// there is no cycle. The previous `import('./useTodoStore')` rejected at
+// runtime on the device ("Possible unhandled promise rejection"), which meant
+// deleting a block never returned its todo to `pending`.
+import { useTodoStore } from './useTodoStore';
 
 // Placeholder until the platform injects a real adapter via initCalendarStorage()
 // (see services/storage.ts → initAllStores). createJSONStorage() resolves its
@@ -43,12 +48,9 @@ export const useCalendarStore = create<CalendarState>()(
       deleteEvent: (id) => {
         const ev = get().events.find(e => e.id === id);
         set(s => ({ events: s.events.filter(e => e.id !== id) }));
-        // Lazily unlink any todo that referenced this event (avoids circular import)
+        // A block that came from a todo hands the todo back to the backlog.
         if (ev?.linkedTodoId) {
-          // Dynamic import avoids circular dep at module scope
-          import('./useTodoStore').then(({ useTodoStore }) => {
-            useTodoStore.getState().unlinkEventFromTodo(ev.linkedTodoId!);
-          });
+          useTodoStore.getState().unlinkEventFromTodo(ev.linkedTodoId);
         }
       },
 

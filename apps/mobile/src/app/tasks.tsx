@@ -1,29 +1,24 @@
-import React, { useState, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
-import { DESIGN_TOKENS as C, useSettingsStore } from '@1440/core';
+import { DESIGN_TOKENS as C } from '@1440/core';
 import type { Todo } from '@1440/core';
 import TaskBacklog from '../components/tasks/TaskBacklog';
 
 export default function TasksScreen() {
   const router = useRouter();
-  const [pendingTodoId, setPendingTodoId] = useState<string | null>(null);
 
-  const setSelectedDate = useSettingsStore(s => s.setSelectedDate);
-
+  // The picked todo travels to Day as a route param. The root layout renders
+  // routes through <Slot>, so this screen unmounts on push and any local state
+  // would be lost — that was the original bug. Day resolves the id against the
+  // todo store and ignores anything that is missing or no longer pending.
   const handlePick = useCallback((todo: Todo) => {
-    if (pendingTodoId === todo.id) {
-      setPendingTodoId(null);
-    } else {
-      setPendingTodoId(todo.id);
-      // Switch to day view so user can see the calendar for placement
-      router.push('/day');
-    }
-  }, [pendingTodoId, router]);
+    router.push({ pathname: '/day', params: { pick: todo.id } });
+  }, [router]);
 
   return (
     <View style={s.root}>
-      <TaskBacklog pendingTodoId={pendingTodoId} onPick={handlePick} />
+      <TaskBacklog onPick={handlePick} />
     </View>
   );
 }

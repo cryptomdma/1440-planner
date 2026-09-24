@@ -12,21 +12,19 @@ import {
 import type { Todo, Priority, CategoryId } from '@1440/core';
 import TodoRow from './TodoRow';
 import { nanoid } from 'nanoid/non-secure';
+import { placeTodo } from '../../services/placeTodo';
 
 interface Props {
-  pendingTodoId?: string | null;
   onPick: (todo: Todo) => void;
 }
 
-export default function TaskBacklog({ pendingTodoId, onPick }: Props) {
+export default function TaskBacklog({ onPick }: Props) {
   const todos       = useTodoStore(s => s.todos);
   const addTodo     = useTodoStore(s => s.addTodo);
   const updateTodo  = useTodoStore(s => s.updateTodo);
   const deleteTodo  = useTodoStore(s => s.deleteTodo);
   const setDone     = useTodoStore(s => s.setDone);
-  const linkEvent   = useTodoStore(s => s.linkEventToTodo);
 
-  const addEvent    = useCalendarStore(s => s.addEvent);
   const events      = useCalendarStore(s => s.events);
 
   const { selectedDate, bufferMinutes } = useSettingsStore(s => ({
@@ -66,39 +64,13 @@ export default function TaskBacklog({ pendingTodoId, onPick }: Props) {
     const withBuf = dayEvents.map(ev => ({ ...ev, durationMinutes: ev.durationMinutes + bufferMinutes }));
     const start   = findNextFreeSlot(withBuf, getCurrentMinute(), todo.durationMinutes);
     if (start === null) return;
-
-    const cat = CATEGORIES.find(c => c.id === todo.categoryId);
-    const ev = {
-      id:              nanoid(),
-      title:           todo.title,
-      date:            selectedDate,
-      startMinute:     start,
-      durationMinutes: todo.durationMinutes,
-      categoryId:      todo.categoryId,
-      notes:           todo.notes,
-      fromTodo:        true,
-      linkedTodoId:    todo.id,
-    };
-    addEvent(ev);
-    linkEvent(todo.id, ev.id);
+    placeTodo(todo, selectedDate, start);
   };
 
   const handleAutoAll = () => {
     const placements = autoScheduleQueue(pending, dayEvents, getCurrentMinute(), bufferMinutes);
     for (const { todo, startMinute } of placements) {
-      const ev = {
-        id:              nanoid(),
-        title:           todo.title,
-        date:            selectedDate,
-        startMinute,
-        durationMinutes: todo.durationMinutes,
-        categoryId:      todo.categoryId,
-        notes:           todo.notes,
-        fromTodo:        true,
-        linkedTodoId:    todo.id,
-      };
-      addEvent(ev);
-      linkEvent(todo.id, ev.id);
+      placeTodo(todo, selectedDate, startMinute);
     }
   };
 
@@ -199,7 +171,6 @@ export default function TaskBacklog({ pendingTodoId, onPick }: Props) {
       renderItem={({ item }) => (
         <TodoRow
           todo={item}
-          isPicking={pendingTodoId === item.id}
           onDone={id => setDone(id, item.status !== 'done')}
           onDelete={deleteTodo}
           onSchedule={handleSchedule}
