@@ -26,6 +26,8 @@ interface SettingsState {
   sleepMinute:        number;
   highlightConflicts: boolean;
   rulerShowClock:     boolean;
+  // Minutes before a block starts that its local notification fires (0 = at start)
+  leadTimeMinutes:    number;
   // selectedDate is NOT persisted — always resets to today on cold start
   selectedDate: string;
 
@@ -47,6 +49,7 @@ export const useSettingsStore = create<SettingsState>()(
       sleepMinute:        1320,  // 10 PM
       highlightConflicts: true,
       rulerShowClock:     true,
+      leadTimeMinutes:    15,
       selectedDate:       today(),
 
       setCountMode:    (m) => set({ countMode: m }),
@@ -69,6 +72,7 @@ export const useSettingsStore = create<SettingsState>()(
         sleepMinute:        state.sleepMinute,
         highlightConflicts: state.highlightConflicts,
         rulerShowClock:     state.rulerShowClock,
+        leadTimeMinutes:    state.leadTimeMinutes,
       }),
     }
   )

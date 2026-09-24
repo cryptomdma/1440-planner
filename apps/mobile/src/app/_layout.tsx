@@ -1,15 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, Pressable, StyleSheet, ActivityIndicator } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, Pressable, StyleSheet, ActivityIndicator, AppState } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { Slot, usePathname, useRouter } from 'expo-router';
 import {
   DESIGN_TOKENS as C,
   useCalendarStore, useSettingsStore, useTodoStore,
-  useCurrentMinute,
+  useCurrentMinute, today,
 } from '@1440/core';
+import type { CalendarEvent } from '@1440/core';
 import { initAllStores } from '../services/storage';
 import { buildWatchSnapshot, syncToWatch } from '../services/watchSync';
+import { requestPermissions, hasPermissions, scheduleDailyReminder } from '../services/notifications';
+
+// Coalesces the burst of store updates a drag/resize gesture emits into one
+// native cancel-all + reschedule.
+const RESCHEDULE_DEBOUNCE_MS = 500;
+
+const eventsOn = (events: CalendarEvent[], date: string) => events.filter(e => e.date === date);
+
+// updateEvent() keeps object identity for untouched events, so a shallow
+// compare of the today-subset tells us whether today actually changed.
+const sameEvents = (a: CalendarEvent[], b: CalendarEvent[]) =>
+  a.length === b.length && a.every((e, i) => e === b[i]);
 
 // Initialize storage adapters synchronously before any store is used
 initAllStores();
@@ -63,6 +76,70 @@ export default function RootLayout() {
     });
     return unsub;
   }, [currentMinute]);
+
+  // Local notifications: ask once after hydration, then keep *today's*
+  // reminders in sync. Deliberately keyed on `hydrated` only — see the
+  // watch-sync effect above for why `currentMinute` must not be a dep here.
+  const rescheduleRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (!hydrated) return;
+
+    let granted = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const flush = () => {
+      timer = null;
+      if (!granted) return;
+      const date = today();
+      const { events }          = useCalendarStore.getState();
+      const { leadTimeMinutes } = useSettingsStore.getState();
+      scheduleDailyReminder(eventsOn(events, date), date, leadTimeMinutes)
+        .catch(err => console.warn('[notifications] reschedule failed', err));
+    };
+    const reschedule = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(flush, RESCHEDULE_DEBOUNCE_MS);
+    };
+    rescheduleRef.current = reschedule;
+
+    requestPermissions().then(ok => { granted = ok; reschedule(); });
+
+    // Calendar mutations — only when today's events changed. Editing another
+    // day (selectedDate is not today) must not touch today's notifications.
+    let prevToday = eventsOn(useCalendarStore.getState().events, today());
+    const unsubCalendar = useCalendarStore.subscribe(state => {
+      const nextToday = eventsOn(state.events, today());
+      const changed = !sameEvents(prevToday, nextToday);
+      prevToday = nextToday;
+      if (changed) reschedule();
+    });
+
+    const unsubSettings = useSettingsStore.subscribe((state, prev) => {
+      if (state.leadTimeMinutes !== prev.leadTimeMinutes) reschedule();
+    });
+
+    // Foreground: permission may have changed in system settings, or the date
+    // may have rolled over while backgrounded.
+    const appState = AppState.addEventListener('change', status => {
+      if (status !== 'active') return;
+      hasPermissions().then(ok => { granted = ok; reschedule(); });
+    });
+
+    return () => {
+      unsubCalendar();
+      unsubSettings();
+      appState.remove();
+      if (timer) clearTimeout(timer);
+      rescheduleRef.current = null;
+    };
+  }, [hydrated]);
+
+  // Midnight rollover while the app stays in the foreground: `today()` flips,
+  // so the new day's blocks need scheduling. currentMinute re-renders us every
+  // 30s, which is what makes this string change.
+  const todayStr = today();
+  useEffect(() => { rescheduleRef.current?.(); }, [todayStr]);
 
   if (!hydrated) {
     return (
