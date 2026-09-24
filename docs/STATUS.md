@@ -375,10 +375,11 @@ confirmed afterwards that `npx expo run:android` builds and launches on a physic
 
 # 1440 Planner — Pass 5: Phase 6 watch sync, part 1 (Wear OS build + phone → watch Data Layer)
 
-Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-23. PR #13
-(`fix/todo-pick-flow`, pass 4) should be merged by now — if it is not, stop and ask. The memory
-note `device-and-tooling` holds the phone serial, adb path, tap coordinates and recipes
-(including how to open a PR without `gh`); it is loaded into your context, use it.
+Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-24. PR #13
+(`fix/todo-pick-flow`, pass 4) is merged as `77afc75`; `main` is clean. The memory note
+`device-and-tooling` holds the phone serial, adb path, tap coordinates, the watch's
+connect flow and recipes (including how to open a PR without `gh`); it is loaded into your
+context, use it.
 
 ## Prerequisites — check before writing anything
 
@@ -388,35 +389,47 @@ note `device-and-tooling` holds the phone serial, adb path, tap coordinates and 
    Run the rebuild detached (`Start-Process cmd /c "npx expo run:android > log 2>&1"` from
    `apps/mobile`) and read the log; Gradle takes ~1.5 min warm, longer with a new module.
 2. Phone: `& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" devices` → `R5CY72XEJKD`.
-3. **The watch target is a Wear OS emulator — decided 2026-09-24; there is no physical
-   watch.** Nothing Wear-related exists on the machine yet: `~/.android/avd` holds only
-   `Medium_Phone_API_36.1`, `$env:LOCALAPPDATA\Android\Sdk\system-images` holds only
-   `android-36.1/google_apis_playstore/x86_64`, and `Sdk\cmdline-tools` (hence
-   `sdkmanager`/`avdmanager`) is **not installed**; only `Sdk\emulator\emulator.exe` is.
-   - **Owner, before the session (5 min in Android Studio):** Device Manager → Create
-     device → category *Wear OS* → *Wear OS Small Round* → system image API 34
-     (`android-wear`, x86_64; download it there) → name it `Wear_API_34`. Also install the
-     *Wear OS by Google* app on the Galaxy from Play (pairing UI lives there; Samsung's
-     Galaxy Wearable app does not pair emulators).
-   - **Session, first step:** `& "$env:LOCALAPPDATA\Android\Sdk\emulator\emulator.exe"
-     -list-avds` must print `Wear_API_34`. If it does not, the CLI fallback is: download
-     `commandlinetools-win-*_latest.zip` from developer.android.com/studio, expand it to
-     `Sdk\cmdline-tools\latest\` (the zip's inner `cmdline-tools` folder becomes `latest`),
-     accept licences with `(1..30 | % {'y'}) | & "$sdk\cmdline-tools\latest\bin\sdkmanager.bat" --licenses`,
-     then `sdkmanager "system-images;android-34;android-wear;x86_64"` and
-     `avdmanager create avd -n Wear_API_34 -k "system-images;android-34;android-wear;x86_64" -d wearos_small_round`.
-   - **Boot and pair:** `Start-Process "$sdk\emulator\emulator.exe" -ArgumentList '-avd Wear_API_34'`
-     (first boot takes minutes; `adb wait-for-device` on its serial, normally
-     `emulator-5554`). Pair it with the *physical* Galaxy per
-     developer.android.com/training/wearables/get-started/connect-phone: `adb -s R5CY72XEJKD
-     forward tcp:5601 tcp:5601`, then on the phone open *Wear OS by Google* → add a new
-     watch → pick the emulator. Both devices then show in `adb devices`; every watch
-     command below uses `-s emulator-5554`. Fallback if pairing the physical phone fights
-     you: pair the Wear AVD with the `Medium_Phone_API_36.1` AVD through Device Manager's
-     pairing assistant and run `npx expo run:android` against that phone AVD instead (it is
-     a `google_apis_playstore` image, so Play Services and the Data Layer are present).
-   - Build the watch Gradle project first regardless — it does not need the emulator to
-     compile.
+3. **Watch target: the owner's physical 44mm Galaxy Watch** (Wear OS 3+, already paired
+   with the S25+ over Bluetooth). ADB debugging **and** "Debugging over Wi-Fi" were enabled
+   on it on 2026-09-24. A Galaxy Watch charges on pogo pins and has no USB data path, so
+   **Wi-Fi ADB is the only way in**; there is no Bluetooth debugging on Wear OS 3+.
+   - **It was not reachable when pass 4 closed, and that is expected.** A TCP probe of every
+     host on `192.168.1.0/24` found nothing listening on 5555, and `adb mdns services`
+     listed nothing. PC is `192.168.1.80`, phone is `192.168.1.91`. Galaxy Watches park
+     their Wi-Fi radio whenever the screen is off and the phone is in Bluetooth range, so
+     the port only exists while the watch is awake and actually on Wi-Fi. Treat a silent
+     subnet as "watch asleep", not "setup broken".
+   - **Connect:** put the watch on its charger, wake it, confirm Settings → Connections →
+     Wi-Fi shows the same network, then read the address under Developer options →
+     Debugging over Wi-Fi. Also turn on Developer options → *Stay awake while charging*, or
+     the connection dies mid-session.
+     - Address ends in `:5555` → `adb connect <ip>:5555`.
+     - Address shows a high random port plus a *Pair new device* entry → Android 11+ flow:
+       `adb pair <ip>:<pair-port>` with the 6-digit code, then `adb connect <ip>:<connect-port>`.
+   - **Re-probe helper** (this is the exact scan pass 4 ran; adjust the subnet if it moved):
+     ```powershell
+     $p = foreach ($i in 1..254) { $ip = "192.168.1.$i"; $c = New-Object Net.Sockets.TcpClient
+       [pscustomobject]@{ IP = $ip; C = $c; AR = $c.BeginConnect($ip, 5555, $null, $null) } }
+     Start-Sleep -Milliseconds 2500
+     foreach ($x in $p) { if ($x.AR.IsCompleted) { try { $x.C.EndConnect($x.AR); if ($x.C.Connected) { $x.IP } } catch {} }; $x.C.Close() }
+     ```
+   - **Record what it actually is.** Nobody has read the hardware yet. Once connected:
+     `adb -s <watch> shell getprop ro.product.model` (SM-R87x = Watch 4, R91x = Watch 5,
+     R94x = Watch 6, L31x = Watch 7), plus `getprop ro.build.version.sdk` and `wm size`
+     (44mm panels are 450x450 on Watch 4/5, 480x480 on Watch 6/7). Put these in the
+     `device-and-tooling` memory note — the whole pass depends on them and they cost one
+     command.
+   - `adb devices` then lists both; every watch command below uses `-s <ip>:5555`.
+   - **Fallback, only if the watch stays unreachable:** a Wear OS emulator. `Sdk\cmdline-tools`
+     is **not installed** (only `Sdk\emulator\emulator.exe` exists), so build the AVD from
+     Android Studio's Device Manager: Wear OS **Large Round** (454x454, the profile that
+     matches a 44mm panel; Small Round is 384x384, the 40mm class), API 34 `android-wear`
+     x86_64, named `Wear_API_34`. Pair it with the physical phone via `adb -s R5CY72XEJKD
+     forward tcp:5601 tcp:5601` and the *Wear OS by Google* app, or pair it with the
+     `Medium_Phone_API_36.1` AVD and run `npx expo run:android` against that phone instead
+     (it is a `google_apis_playstore` image, so Play Services and the Data Layer are there).
+     Say in the PR which target was used.
+   - Build the watch Gradle project first regardless — compiling needs no device at all.
 4. Toolchain facts from the phone build — reuse them for the watch project so both use the
    same versions: Gradle 8.8 (`apps/mobile/android/gradle/wrapper/gradle-wrapper.properties`),
    AGP 8.2.1 (`node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml:2`),
@@ -470,6 +483,13 @@ compilation fails until a PNG exists. Both watch `README.md` files are 0 bytes.
 - `WatchFaceService.kt:29` declares `class WatchFaceService : WatchFaceService()`, shadowing
   the androidx base pulled in by the wildcard import at `:10`. It compiles (the subclass wins
   in-file) but the manifest must name `com.planner1440.watchface.WatchFaceService`.
+- **On a real Galaxy Watch the face has to survive One UI's picker.** This is a Jetpack
+  `androidx.wear.watchface` Canvas renderer, not Watch Face Format. Sideloaded Jetpack
+  faces still run on current Wear OS, but Samsung's picker is fussier than the emulator's:
+  if the APK installs and no face appears, check the `BIND_WALLPAPER` permission, the
+  `android.service.wallpaper` meta-data, and that `@drawable/watch_face_preview` resolves,
+  before assuming the renderer is wrong. On the watch, the picker is long-press on the
+  current face → *Customize* / *Add face*.
 - Dependencies the imports require: `androidx.wear.watchface:watchface:1.2.1`,
   `androidx.wear.watchface:watchface-complications-data-source-ktx:1.2.1`,
   `com.google.android.gms:play-services-wearable:18.2.0`,
@@ -538,10 +558,10 @@ under `watch/android-wearos/`.
 - The face's *look* is out of scope — it only has to render the snapshot it receives.
 - Design tokens are irrelevant on the watch side, but do not add new hex values to the app.
 
-## Verification (required; on the Wear OS emulator, serial `emulator-5554` unless `adb devices` says otherwise)
+## Verification (required; `<watch>` is the physical watch's `<ip>:5555`, or the emulator if it came to that — say which)
 
-0. `adb devices` lists both `R5CY72XEJKD` and the emulator, and the Wear OS app on the
-   phone shows the emulator as connected. Screenshot the emulator once paired.
+0. `adb devices` lists both `R5CY72XEJKD` and `<watch>`, and the model/SDK/`wm size`
+   readout from prerequisite 3 is recorded in the memory note.
 1. `cd watch/android-wearos; .\gradlew :app:assembleDebug` succeeds; `adb -s <watch> install -r`
    the APK; the face is selectable on the watch. Screenshot it (`adb -s <watch> shell screencap`).
 2. Phone rebuild log shows `:wearable-data-layer:compileDebugKotlin` (or similar) and the app
@@ -569,5 +589,6 @@ under `watch/android-wearos/`.
   renumber; add a pass-5 log entry; replace this section with the pass-6 handoff prompt
   (candidates: SDK upgrade off 51, or timer-driven watch resync + `syncIOS` via
   WatchConnectivity).
-- Update the `device-and-tooling` memory note with the emulator's serial, the pairing steps
-  that actually worked, and the emulator boot time.
+- Update the `device-and-tooling` memory note with the watch's model, Android/Wear version,
+  resolution and IP, the connect flow that actually worked (`:5555` vs `adb pair`), and how
+  long the Wi-Fi link survives once the watch is off the charger.
