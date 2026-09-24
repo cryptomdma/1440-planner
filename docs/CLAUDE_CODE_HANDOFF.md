@@ -554,7 +554,7 @@ App store readiness:
 [ ] EditScope action sheet for series events (instance / this_and_future / all)
 [ ] Empty state illustrations (day, tasks, watch — each view)
 [ ] Onboarding flow: 3 screens explaining the 1440 concept before first use
-[ ] Notification lead time configurable in Settings (default 15m)
+[x] Notification lead time configurable in Settings (default 15m)  — feat/local-notifications
 [ ] Accessibility: accessibilityLabel on all interactive elements
 [ ] accessibilityRole="button" on all touchables
 [ ] VoiceOver/TalkBack ordering matches visual order
@@ -608,7 +608,7 @@ These were NOT resolved in v6 and need attention during the mobile build:
 | IDs use `Date.now() + Math.random()` | Replace with `nanoid()` throughout |
 | No EditScope for series (edit-one vs edit-all) | Add `EditScope` action sheet in `EventDetailSheet` |
 | `highlightConflicts` toggle wired in Settings but rendering not implemented | In `DayGrid`, when `highlightConflicts` is true, dim events that have `totalColumns === 1` while their time neighbors have conflicts |
-| No notification lead time setting | Add to `SettingsPanel`, pass into `syncTodayReminders()` |
+| ~~No notification lead time setting~~ | Done — `leadTimeMinutes` in `useSettingsStore`, passed to `scheduleDailyReminder()` from `_layout.tsx` |
 | Series deletion not implemented | Add `deleteSeries(seriesId, scope, fromDate)` to store |
 | Repeat count max is UI-only (52) | Enforce in store + add to Settings if desired |
 | No conflict between events on different columns is flagged to user | Consider warning in `EventDetailSheet` when saving would overlap |
@@ -641,7 +641,7 @@ Core:
 [x] All prototype features work identically on mobile
 [x] Events and todos persist across app restarts (AsyncStorage)
 [x] Settings persist across restarts
-[ ] Local notifications fire N minutes before blocks on today
+[x] Local notifications fire N minutes before blocks on today  — feat/local-notifications, verified on-device 2026-09-23
 [ ] Watch sync stubs log correctly (no crash, no native module error)
 
 Quality:

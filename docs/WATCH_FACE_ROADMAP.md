@@ -367,8 +367,8 @@ export interface WatchEvent {
 - Block drag-to-reschedule + resize knobs (`d0d0f14`)
 
 ### 🔨 Now — Mobile App (Est. 4–6 weeks)
-- [ ] Local notifications — `apps/mobile/src/services/notifications.ts` is **written but
-      imported nowhere**; needs a call site + permission request at startup
+- [x] Local notifications — wired in `apps/mobile/src/app/_layout.tsx`; fires N minutes
+      before each of today's blocks, N set in Settings (`feat/local-notifications`)
 - [ ] TestFlight + internal Play Store track — blocked: no `eas.json`, no EAS project,
       no `ios/` directory
 
