@@ -61,6 +61,8 @@ export async function scheduleDailyReminder(
       content: {
         title: ev.title || 'Untitled block',
         body:  reminderBody(ev, leadMinutes),
+        // Read back by reminderDateFromResponse() when the user taps it.
+        data:  { date: ev.date },
       },
       trigger: { date: fireAt, channelId: CHANNEL_ID },
     });
@@ -81,4 +83,14 @@ function reminderBody(ev: CalendarEvent, leadMinutes: number): string {
 
 export async function cancelAllNotifications(): Promise<void> {
   await Notifications.cancelAllScheduledNotificationsAsync();
+}
+
+// The calendar date (YYYY-MM-DD) of the reminder the user tapped, or null if
+// the response is not one of ours. Android round-trips `data` through a JSON
+// string, so the shape is validated rather than trusted.
+export function reminderDateFromResponse(
+  response: Notifications.NotificationResponse | null
+): string | null {
+  const date = response?.notification.request.content.data?.date;
+  return typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null;
 }

@@ -7,9 +7,10 @@ The other docs describe *intent*, and some of it predates what actually shipped.
 
 ## TL;DR
 
-The Expo app works and is genuinely usable, and as of pass 2 it actually persists data and
-fires local notifications. Everything *around* it — watch sync, watch builds, backend, web
-prototype, iOS — is scaffolding. Ten PRs have merged; `feat/local-notifications` is open.
+The Expo app works and is genuinely usable: it persists data, fires punctual local
+notifications, and as of pass 3 it cold-starts on the Day screen instead of "Unmatched
+Route". Everything *around* it — watch sync, watch builds, backend, web prototype, iOS — is
+scaffolding. Eleven PRs have merged; `fix/url-scheme-rebuild` (pass 3) is open.
 
 ---
 
@@ -33,7 +34,13 @@ prototype, iOS — is scaffolding. Ten PRs have merged; `feat/local-notification
   before the block starts (Settings → NOTIFICATION LEAD TIME, default 15m). Rescheduled
   on today-only calendar changes, lead-time changes, foreground, and midnight rollover;
   debounced 500 ms. Wiring lives in `apps/mobile/src/app/_layout.tsx`, scheduling in
-  `apps/mobile/src/services/notifications.ts`.
+  `apps/mobile/src/services/notifications.ts`. Exact alarms via `USE_EXACT_ALARM`
+  (pass 3): measured 76 ms late on-device. **Tapping a reminder** opens Day on the block's
+  date, whether the app is backgrounded or not running (`_layout.tsx` response listener +
+  last-response check, gated on navigator readiness).
+- **URL scheme `planner1440`** (renamed in pass 3 from the invalid digit-leading
+  `1440planner`) — cold start lands on Day; `planner1440:///day` and
+  `planner1440:///settings` deep links resolve.
 - Persistence across restarts via AsyncStorage, with a hydration gate in `_layout.tsx`.
   **This never actually worked before pass 2** — see the 2026-09-23 session log.
 
@@ -62,26 +69,23 @@ prototype, iOS — is scaffolding. Ten PRs have merged; `feat/local-notification
 on a fresh install. **See `CLAUDE.md` before touching `metro.config.js`.** The real fix is
 an SDK upgrade — a deliberate, self-contained future pass.
 
-**Invalid URL scheme → cold start lands on "Unmatched Route".** `apps/mobile/app.json`
-sets `scheme: "1440planner"`. URL schemes must begin with a letter (RFC 3986 / WHATWG), and
-Expo SDK 51 installs a spec-compliant global `URL`, so expo-router's root URL
-`1440planner:///` throws `Invalid URL`, the router falls back to the raw string as the
-route path, and the app opens on its "Unmatched Route" screen. Tapping the DAY tab
-recovers. Reproduces with unmodified `main` (confirmed via `git stash` on 2026-09-23);
-strangely the first two launches that evening rendered the Day screen normally and every
-launch since has not — root cause is deterministic, the intermittency is not understood.
-**Fix:** rename the scheme (e.g. `planner1440`) and rebuild — the scheme is baked into the
-Android manifest, so this is a prebuild/rebuild pass, not a JS change.
+**`app.json` edits silently fail to reach the JS side.** The embedded `app.config` asset
+(`Constants.expoConfig`, which expo-router and expo-linking read the scheme from) is written
+by the Gradle task `:expo-constants:createExpoConfig`, which declares outputs but no inputs
+and is therefore `UP-TO-DATE` forever after its first run. The first pass-3 rebuild updated
+the manifest but not the JS for exactly this reason. Workaround and the check to make are in
+`CLAUDE.md` ("`app.json` changes do NOT reach `Constants.expoConfig`"). Goes away with the
+SDK upgrade (newer expo-constants marks the task always out-of-date).
 
-**Reminders can fire up to ~1 minute late.** expo-notifications uses `AlarmManager`; without
-`SCHEDULE_EXACT_ALARM` / `USE_EXACT_ALARM` (Android 12+ / 14+) the OS batches alarms.
-Observed 18 s and 61 s late on a Galaxy running Android 16. Fine for a lead-time reminder;
-add the exact-alarm permission if it starts to matter.
+**Settings "SAVE & CLOSE" is `router.back()`.** When Settings is the *first* screen (a
+`planner1440:///settings` deep link, or a notification-style entry), there is nothing to go
+back to and dev builds show a "GO_BACK was not handled" LogBox toast. The normal gear →
+Settings → close path is unaffected. Fix: fall back to `router.replace('/day')` when
+`router.canGoBack()` is false.
 
-**Tapping a reminder is not handled.** There is no notification-response listener and no
-`+native-intent`, so expo-router will treat the `expo-notifications://…` response URL as a
-route (almost certainly Unmatched Route). Not verified on-device. Follow-up: on tap,
-navigate to `/day` on the block's date.
+*Fixed in pass 3 (kept for history):* the digit-leading URL scheme `1440planner` that made
+every cold start land on "Unmatched Route"; reminders firing 18–61 s late without an
+exact-alarm permission; reminder taps not being handled. See the 2026-09-23 pass-3 log.
 
 **No iOS path at all.** No `ios/` directory, no `eas.json`, no EAS project id. Getting onto
 an iPhone requires either a Mac for a local build or setting up EAS Build. Not started.
@@ -121,26 +125,82 @@ a `packages/core/src/theme.ts` that was deliberately not created (see `DESIGN_TO
 
 Candidates for the next pass, ordered by leverage:
 
-1. **Rename the URL scheme and rebuild** (`apps/mobile/app.json` `scheme` →
-   `planner1440`, then `npx expo prebuild --clean` + `npx expo run:android`). Fixes the
-   cold-start "Unmatched Route" landing. Tiny JSON change, but it is a native rebuild, so
-   keep it in its own pass and re-verify the build on-device. While in there, consider
-   `USE_EXACT_ALARM` for punctual reminders.
-2. **Fix the todo → calendar pick flow** (`tasks.tsx:10`). Small, user-visible bug fix —
-   route param or a shared store field instead of local state.
-3. **Handle reminder taps** — add a notification-response listener (or `+native-intent`)
-   that routes to `/day` for the block's date instead of an unmatched route.
-4. **Start Phase 6 watch sync.** Add `build.gradle` to `watch/android-wearos` so it compiles,
+1. **Fix the todo → calendar pick flow** (`apps/mobile/src/app/tasks.tsx:10`). Small,
+   user-visible bug fix — route param or a shared store field instead of local state.
+   JS-only; reuse the Metro that `expo run:android` leaves on :8081, no rebuild needed.
+   While in `tasks.tsx`/`day.tsx`, also make Settings' SAVE & CLOSE fall back to
+   `router.replace('/day')` when `router.canGoBack()` is false (Known debt).
+2. **Start Phase 6 watch sync.** Add `build.gradle` to `watch/android-wearos` so it compiles,
    then implement `WearableDataLayerModule` and replace the Android stub. This is the
    headline roadmap feature and the biggest single chunk of work.
-5. **SDK upgrade off 51.** Resolves the dependency rot and re-enables Expo Go. Invasive;
-   deserves its own session with nothing else in it.
+3. **SDK upgrade off 51.** Resolves the dependency rot, re-enables Expo Go, and removes the
+   `createExpoConfig` up-to-date trap. Invasive; deserves its own session with nothing else
+   in it.
 
 ---
 
 ## Session log
 
-### 2026-09-23 — Pass 2: local notifications (+ two pre-existing core bugs)
+### 2026-09-23 — Pass 3: URL scheme rename + native rebuild, exact alarms, reminder taps
+Branch `fix/url-scheme-rebuild`. First native rebuild since 2026-09-22, on the same Galaxy
+(Android 16, `America/Chicago`) driven over `adb`. Two Gradle builds, ~1.5 min each.
+
+**Shipped**
+- `apps/mobile/app.json`: `scheme` → `planner1440`; `android.permissions` →
+  `["android.permission.USE_EXACT_ALARM"]`.
+- `android/` was **not** regenerated (no prebuild). `AndroidManifest.xml` hand-edited to
+  match: `<data android:scheme="planner1440"/>` and the `USE_EXACT_ALARM`
+  `<uses-permission>`. The `settings.gradle` / `gradle.properties` hand edits survived;
+  they are now documented in `CLAUDE.md`.
+- Reminder taps (`apps/mobile/src/services/notifications.ts`, `apps/mobile/src/app/_layout.tsx`):
+  each reminder carries `data: { date }`; the root layout registers
+  `addNotificationResponseReceivedListener` and, once hydrated **and** the navigator is
+  ready (`useRootNavigationState()?.key`), reads `getLastNotificationResponseAsync()`,
+  navigates with `setSelectedDate(date)` + `router.replace('/day')`, then clears the last
+  response so a reload doesn't replay it. `reminderDateFromResponse()` validates the
+  `YYYY-MM-DD` shape because Android round-trips `data` through a JSON string.
+
+**Trap: the first rebuild did not fix it.** The manifest had the new scheme but the app
+still cold-started on Unmatched Route showing `1440planner:///1440planner:`. The JS reads
+the scheme from `Constants.expoConfig`, an `app.config` asset that
+`:expo-constants:createExpoConfig` writes — and that task was `UP-TO-DATE` (outputs
+declared, no inputs). The asset on the device dated from 2026-05-08 and still carried
+`"root":"src"` for expo-router. Deleting
+`apps/mobile/node_modules/expo-constants/android/build/generated/assets/expo-constants/`
+made the second build execute the task; the regenerated asset had `planner1440` and the
+permission. Recorded in `CLAUDE.md` and Known debt.
+
+**Verification on-device**
+1. 3× `am force-stop` + launcher intent → Day screen every time. (Before the asset fix it
+   was Unmatched Route 3/3 with the same APK — screenshots taken both times.)
+2. Cold `planner1440:///settings` → Settings; warm `planner1440:///day` → Day.
+3. `dumpsys package`: schemes `planner1440` + `com.planner1440.app`, no `1440planner`;
+   `android.permission.USE_EXACT_ALARM: granted=true`.
+4. Lead 0, block at 22:27 → `dumpsys alarm` shows `origWhen=22:27:00.000 window=0
+   exactAllowReason=policy_permission`; logcat `Received BROADCAST` at 22:27:00.006 and
+   `NotificationManager … notify(` at 22:27:00.076 → **76 ms** late (pass 2: 18 s and 61 s).
+   A second block at 22:31 posted 74 ms late.
+5. Lead time changed to 0, `am force-stop`, launcher relaunch → resync log says `lead 0m`
+   and the app opens on Day. Data survived the reinstall (same debug keystore).
+6. Reminder tap with the app backgrounded on Sep 24 → Day on Sep 23 (listener path). Then
+   with the process gone (`am kill`, **not** `force-stop` — that cancels the alarm *and*
+   the posted notification) → tap → cold start → Day on Sep 23, no Unmatched Route
+   (last-response path).
+   `apps/mobile` `tsc --noEmit` still has only the one pre-existing core error.
+
+**Not done / caveats**
+- Test blocks on the phone: `NotifTestA/B/C/D`, `OtherDay*`, `PastBlock`.
+  `adb shell pm clear com.planner1440.app` wipes them (and settings + the notification
+  permission, whose prompt will then show again).
+- The Metro that this pass's `expo run:android` started is still on :8081 (a
+  `cmd /c npx expo run:android` process tree from 22:15). Pass 4 is JS-only — reuse it. Kill
+  the tree first if another rebuild is needed.
+- Reminders are today-only, so the date routing on tap mainly matters when the user left
+  the app on another day; that is the case that was exercised.
+- Settings' SAVE & CLOSE from a deep-linked Settings screen logs a dev-only GO_BACK toast
+  (Known debt, pre-existing).
+
+### 2026-09-23 — Pass 2: local notifications (+ two pre-existing core bugs) (PR #11, merged `7a9e5d4`)
 Branch `feat/local-notifications`. Verified on a physical Galaxy (Android 16,
 `America/Chicago`) driven over `adb`; JS reloaded through the Metro instance the previous
 `expo run:android` had left running on :8081. No native rebuild.

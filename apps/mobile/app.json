@@ -4,7 +4,7 @@
     "slug": "1440-planner",
     "version": "1.0.0",
     "orientation": "portrait",
-    "scheme": "1440planner",
+    "scheme": "planner1440",
     "userInterfaceStyle": "dark",
     "backgroundColor": "#07090f",
     "plugins": [
@@ -15,7 +15,8 @@
       "package": "com.planner1440.app",
       "adaptiveIcon": {
         "backgroundColor": "#07090f"
-      }
+      },
+      "permissions": ["android.permission.USE_EXACT_ALARM"]
     },
     "ios": {
       "bundleIdentifier": "com.planner1440.app",
