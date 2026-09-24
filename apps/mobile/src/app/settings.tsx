@@ -22,12 +22,21 @@ export default function SettingsScreen() {
 
   const ac = countMode === 'down' ? C.cyan : C.amber;
 
+  // Settings can be the first screen (planner1440:///settings deep link), in
+  // which case there is no history and back() logs "GO_BACK was not handled".
+  // canGoBack() is also false before the navigator mounts, which is the safe
+  // default here.
+  const close = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace('/day');
+  };
+
   return (
     <View style={s.root}>
       {/* Header */}
       <View style={s.header}>
         <Text style={[s.headerTitle, { color: ac }]}>⚙ SETTINGS</Text>
-        <Pressable onPress={() => router.back()} style={s.closeBtn}>
+        <Pressable onPress={close} style={s.closeBtn}>
           <Text style={s.closeBtnText}>✕</Text>
         </Pressable>
       </View>
@@ -148,7 +157,7 @@ export default function SettingsScreen() {
         </Section>
 
         {/* Done */}
-        <Pressable style={[s.doneBtn, { borderColor: ac, backgroundColor: `${ac}22` }]} onPress={() => router.back()}>
+        <Pressable style={[s.doneBtn, { borderColor: ac, backgroundColor: `${ac}22` }]} onPress={close}>
           <Text style={[s.doneBtnText, { color: ac }]}>SAVE & CLOSE</Text>
         </Pressable>
       </ScrollView>
