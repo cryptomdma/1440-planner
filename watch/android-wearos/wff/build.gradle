@@ -1,0 +1,40 @@
+// Watch Face Format face: a no-code APK the OS's WFF runtime renders from
+// res/raw/watchface.xml. Wear OS 5+ launch devices (this Galaxy Watch 7) block
+// third-party androidx/Canvas faces, so this is the face that actually shows up.
+// Its complication slots default to the data sources in :app, which is where the
+// Data Layer listener and the phone's snapshot live.
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.planner1440.wff'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.planner1440.wff'
+        minSdk 33          // Watch Face Format v1 = Wear OS 4+
+        targetSdk 34
+        versionCode 1
+        versionName '1.0.0'
+    }
+
+    signingConfigs {
+        debug {
+            storeFile file('../app/debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+        }
+    }
+}

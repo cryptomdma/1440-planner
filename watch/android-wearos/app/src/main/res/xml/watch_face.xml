@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- android.service.wallpaper meta-data for WatchFaceService. WallpaperInfo insists the
+     root element is <wallpaper>; watch_face_info.xml is the (separate) Watch Face Format
+     descriptor and must not be pointed at from here. -->
+<wallpaper xmlns:android="http://schemas.android.com/apk/res/android" />

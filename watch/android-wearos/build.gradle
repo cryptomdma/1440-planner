@@ -1,0 +1,7 @@
+// Same toolchain as the phone build (apps/mobile/android): AGP 8.2.1, Kotlin 1.9.23,
+// Gradle 8.8 (gradle/wrapper), JDK 17 (gradle.properties). Keep them in step so one
+// installed SDK serves both builds.
+plugins {
+    id 'com.android.application' version '8.2.1' apply false
+    id 'org.jetbrains.kotlin.android' version '1.9.23' apply false
+}

@@ -2,6 +2,7 @@ import { Platform } from 'react-native';
 import type { CalendarEvent } from '@1440/core';
 import { CATEGORIES } from '@1440/core';
 import { minuteToTimeStr } from '@1440/core';
+import WearableDataLayer from '../../modules/wearable-data-layer';
 
 export interface WatchSnapshot {
   version:      number;
@@ -61,7 +62,7 @@ export function buildWatchSnapshot(params: {
   };
 }
 
-// Platform-branched sync. Stubs log during development; real bridges wired in Phase 6.
+// Platform-branched sync. Android goes over the Wearable Data Layer; iOS is still a stub.
 export async function syncToWatch(snapshot: WatchSnapshot): Promise<void> {
   if (Platform.OS === 'android') {
     return syncAndroid(snapshot);
@@ -70,9 +71,22 @@ export async function syncToWatch(snapshot: WatchSnapshot): Promise<void> {
   }
 }
 
+// Fire-and-forget: the calendar subscription in _layout.tsx does not await this, so
+// failures are logged here rather than surfaced. Sends only happen on calendar changes;
+// there is no timer-driven resync yet (the watch derives the minute from its own clock).
 async function syncAndroid(snapshot: WatchSnapshot): Promise<void> {
-  // TODO Phase 6: call WearableDataLayerModule.sendSnapshot(JSON.stringify(snapshot))
-  if (__DEV__) console.log('[watchSync:android]', snapshot.currentMinute, 'min');
+  if (!WearableDataLayer) {
+    if (__DEV__) console.log('[watchSync:android] native module missing — rebuild the app');
+    return;
+  }
+  try {
+    await WearableDataLayer.sendSnapshot(JSON.stringify(snapshot));
+    if (__DEV__) {
+      console.log('[watchSync:android]', snapshot.currentMinute, 'min,', snapshot.events.length, 'events');
+    }
+  } catch (err) {
+    console.warn('[watchSync:android] send failed', err);
+  }
 }
 
 async function syncIOS(snapshot: WatchSnapshot): Promise<void> {

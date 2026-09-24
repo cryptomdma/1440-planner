@@ -1,0 +1,19 @@
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = '1440 Watch'
+include ':app'   // code: Data Layer listener, complication data sources, androidx Canvas face
+include ':wff'   // no-code Watch Face Format face fed by :app's complications
