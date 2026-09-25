@@ -364,7 +364,8 @@ function EditForm(props: EditMode & { onClose: () => void }) {
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const s = StyleSheet.create({
-  backdrop:      { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.75)' },
+  // RN 0.86 dropped `absoluteFillObject`; `absoluteFill` is the same plain object.
+  backdrop:      { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(0,0,0,0.75)' },
   kavContainer:  { flex: 1, justifyContent: 'flex-end' },
   sheet: {
     backgroundColor: C.bg2,

@@ -8,7 +8,10 @@ const CHANNEL_ID = '1440-planner';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
+    // `shouldShowAlert` was deprecated in favour of this pair; on Android both
+    // together are what the old flag meant (heads-up banner + shade entry).
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: false,
     shouldSetBadge: false,
   }),
@@ -64,7 +67,15 @@ export async function scheduleDailyReminder(
         // Read back by reminderDateFromResponse() when the user taps it.
         data:  { date: ev.date },
       },
-      trigger: { date: fireAt, channelId: CHANNEL_ID },
+      // `type` is required since the typed-trigger rework. Without it the object
+      // still typechecks (TS lets `date` through as a member of another arm of
+      // the NotificationTriggerInput union) but parseTrigger() falls all the way
+      // through to the channel-aware branch and the reminder fires immediately.
+      trigger: {
+        type: Notifications.SchedulableTriggerInputTypes.DATE,
+        date: fireAt,
+        channelId: CHANNEL_ID,
+      },
     });
     scheduled++;
   }
