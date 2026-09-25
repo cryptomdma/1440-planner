@@ -15,8 +15,8 @@ Wearable Data Layer, and `watch/android-wearos` is a real two-module Gradle proj
 Watch Face Format face installs and renders on the owner's Galaxy Watch 7. **The phone →
 watch hop itself has not been exercised on hardware yet** — the phone dropped off `adb`
 minutes into pass 5 and never returned; the watch side was proven with an injected
-snapshot. Backend, web prototype and iOS are still scaffolding. Fifteen PRs have merged;
-`feat/watch-sync-android` (pass 5, PR #16) is open.
+snapshot. Backend, web prototype and iOS are still scaffolding. Sixteen PRs have merged,
+pass 5 among them; `docs/adb-fixed-ports` is open.
 
 ---
 
@@ -185,7 +185,7 @@ Candidates for the next pass, ordered by leverage:
 
 ## Session log
 
-### 2026-09-24 — Pass 5: Phase 6 watch sync, part 1 — Wear OS build + Data Layer module (PR #16, open)
+### 2026-09-24 — Pass 5: Phase 6 watch sync, part 1 — Wear OS build + Data Layer module (PR #16, merged `a8d85ee`)
 Branch `feat/watch-sync-android`. Native work on both sides. Watch: the owner's physical
 Galaxy Watch 7 44mm (`SM-L310`, Android 16 / Wear OS 6) over Wi-Fi ADB — the pairing from
 the previous day was still live at `192.168.1.68:44881`. Phone: `R5CY72XEJKD` was on `adb`
@@ -523,8 +523,8 @@ confirmed afterwards that `npx expo run:android` builds and launches on a physic
 # 1440 Planner — Pass 6: Phase 6 watch sync, part 2 (prove phone → watch on hardware, then keep it fresh)
 
 Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-24. PR #16
-(`feat/watch-sync-android`, pass 5) is open — check whether it has been merged; if not,
-branch from it, not from `main`. The memory note `device-and-tooling` holds the phone
+(`feat/watch-sync-android`, pass 5) is **merged** as `a8d85ee`, so branch from an updated
+`main`. The memory note `device-and-tooling` holds the phone
 serial, adb path, the watch's connect flow, the first-time face-picker recipe, the
 `DEBUG_SURFACE` switch broadcast, the `run-as` snapshot-injection recipe and how to open a
 PR without `gh`; it is loaded into your context, use it.
@@ -536,17 +536,23 @@ PR without `gh`; it is loaded into your context, use it.
    only after the session ended; the re-plug showed `unauthorized` until the USB-debugging
    prompt was accepted on the phone. If it is missing or unauthorized, stop and tell the
    owner to re-seat the cable and tap **Allow** (with *Always allow from this computer*) —
-   **nothing in this pass can be verified without it.** Still USB-only
-   (`service.adb.tcp.port` is empty); `adb tcpip 5555` + `adb connect 192.168.1.91:5555`
-   would make a cable drop survivable, the way the watch now is. The installed build is
-   still the pass-4 APK (`lastUpdateTime=2026-09-23 22:17`), i.e. **without** the module.
+   **nothing in this pass can be verified without it.** It is also reachable over Wi-Fi now:
+   `adb connect 192.168.1.91:5555` (tcpip mode set 2026-09-24, so a cable drop no longer ends
+   the session). With both links up `adb devices` lists the phone **twice**, so always pass
+   `-s R5CY72XEJKD` or `-s 192.168.1.91:5555` rather than relying on a single default device.
+   The installed build is still the pass-4 APK (`lastUpdateTime=2026-09-23 22:17`), i.e.
+   **without** the module — installing the pass-5 one is step 1 of the goal below.
 2. **The watch is on a fixed port now:** `adb connect 192.168.1.68:5555`. It was switched to
    legacy tcpip mode on 2026-09-24 (`adb -s <old-port> tcpip 5555`, issued over the existing
    wireless link since the watch has no USB data path), because the pairing-flow port rotates
    whenever adbd restarts. Verified to survive screen-off and a disconnect. **It will not
    survive a watch reboot** (`persist.adb.tcp.port` needs root): after a restart, re-pair once
    via Developer options → Wireless debugging → `adb pair <ip>:<pair-port> <code>`, then
-   `adb connect <ip>:<connect-port>` and re-issue `adb tcpip 5555`. Keep it on the charger.
+   `adb connect <ip>:<connect-port>` and re-issue `adb tcpip 5555`. **A refused connection
+   usually means the watch is asleep, not that the pin broke** — Galaxy Watches park Wi-Fi
+   when the screen is off and the phone is in Bluetooth range. Tap the screen, then
+   `adb disconnect` + `adb connect` again. Keep it on the charger, and note that *Stay awake
+   while charging* stops holding the screen once the battery reads 100 %.
 3. **Metro.** Pass 5 left a fresh detached `npx expo start` on :8081 (started ~15:05 on
    2026-09-24). `Get-NetTCPConnection -LocalPort 8081 -State Listen` → if it is alive, reuse
    it (JS-only edits Fast-Refresh; a `packages/core` edit needs `am force-stop` + relaunch).
@@ -668,9 +674,12 @@ field.
   merge**. PR description: what was verified with logcat excerpts and screenshots, what the
   timer does, anything left (iOS, arcs).
 - `docs/STATUS.md`: TL;DR PR count and open branch; "Watch sync transport" row → verified;
-  remove the "Phone → watch delivery is unverified" Known-debt paragraph; add
-  "(PR #16, merged `sha`)" to the pass-5 heading; renumber "Next up"; pass-6 log entry;
-  replace this section with the pass-7 handoff (candidates: SDK upgrade off 51; per-block
-  arcs on the WFF face via `RANGED_VALUE` slots; `syncIOS` via WatchConnectivity).
-- Update the `device-and-tooling` memory note with whether the phone's USB link held,
-  whether `adb tcpip` was enabled, and how long the watch's Wi-Fi ADB session lasted.
+  remove the "Phone → watch delivery is unverified" Known-debt paragraph; renumber
+  "Next up"; pass-6 log entry; replace this section with the pass-7 handoff (candidates:
+  SDK upgrade off 51; per-block arcs on the WFF face via `RANGED_VALUE` slots; `syncIOS`
+  via WatchConnectivity). The pass-5 heading already carries its merge sha.
+- **Print the pass-7 handoff prompt in full in the chat too**, in one fenced block, as the
+  last thing in the session — the owner pastes it to start the next one and should not have
+  to open the file for it (`CLAUDE.md` → Session workflow).
+- Update the `device-and-tooling` memory note with how the fixed `:5555` ports held up on
+  both devices, and how long the watch stayed reachable once off the charger.
