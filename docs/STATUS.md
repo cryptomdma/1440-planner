@@ -563,9 +563,11 @@ PR without `gh`; it is loaded into your context, use it.
    fastest path; a plain `npx expo run:android` (Metro killed first) rebuilds it in ~3 min
    if anything native changed. Both watch APKs *are* installed and current
    (`com.planner1440.app` 1.0.0 and `com.planner1440.wff` 1.0.0 built from the PR's tree).
-5. Branch: `git checkout main; git pull` — if #16 is merged, `git checkout -b
-   feat/watch-sync-resync`; if not, `git checkout feat/watch-sync-android; git pull` and
-   branch from there.
+5. Branch: `git checkout main; git pull; git checkout -b feat/watch-sync-resync`. **PR #17
+   (`docs/adb-fixed-ports`) may still be open** — it carries this handoff, the fixed-port
+   notes and the `CLAUDE.md` rule about printing the handoff in chat. If `git log main`
+   does not contain it, branch from `docs/adb-fixed-ports` instead so those docs are not
+   lost, and say so in the PR.
 
 ## Goal
 
@@ -645,7 +647,7 @@ field.
 - Android only; `syncIOS()` stays a stub (WatchConnectivity is a later pass).
 - The WFF face's look and per-block arcs are out of scope (STATUS Known debt).
 
-## Verification (required; `<watch>` = `192.168.1.68:<port>`)
+## Verification (required; `<watch>` = `192.168.1.68:5555`)
 
 0. `adb devices` lists both `R5CY72XEJKD` and `<watch>`.
 1. Install the phone APK, cold-start (`am force-stop` + launcher) → Day. Phone logcat
