@@ -1,13 +1,14 @@
 import React, { useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, Pressable, FlatList, StyleSheet,
-  Platform, UIManager, LayoutAnimation, useWindowDimensions,
+  LayoutAnimation, useWindowDimensions,
 } from 'react-native';
 import { DESIGN_TOKENS as C, dateAddDays, formatDateDisplay, today } from '@1440/core';
 
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
+// `UIManager.setLayoutAnimationEnabledExperimental(true)` used to be required here
+// to opt Android into LayoutAnimation. Under the New Architecture (on since the
+// SDK 57 upgrade) it is a no-op that warns on every launch, and layout animations
+// are enabled by default, so the call is gone.
 
 const DOW    = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTHS = ['January','February','March','April','May','June',

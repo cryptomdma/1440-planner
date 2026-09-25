@@ -243,10 +243,12 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <View style={s.root}>
-          {/* Screen content */}
-          <View style={s.content}>
+          {/* Screen content. The top inset is explicit: since SDK 52 the Android
+              template is edge-to-edge (transparent status/navigation bars), so
+              without it the date strip draws underneath the system clock. */}
+          <SafeAreaView edges={['top']} style={s.content}>
             <Slot />
-          </View>
+          </SafeAreaView>
 
           {/* Custom bottom tab bar */}
           <SafeAreaView edges={['bottom']} style={s.tabBar}>
