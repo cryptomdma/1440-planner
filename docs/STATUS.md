@@ -755,7 +755,7 @@ open a PR without `gh`; it is loaded into your context, use it.
 Move `apps/mobile` from Expo SDK 51 to the current SDK — root `node_modules` already holds
 SDK 55 packages, so 55 is the natural target; step down to 52 only if 55 fails outright —
 delete the three workarounds that exist purely because of the version mix, and prove the
-app on the phone is unchanged, including watch sync. Closes STATUS "Next up" #1 and two
+app on the phone is unchanged, including watch sync. Closes STATUS "Next up" #7 and two
 Known-debt paragraphs ("Dependency rot", "`app.json` edits silently fail").
 
 ## Findings — do not re-derive
@@ -834,7 +834,7 @@ expo-router 6 still exports `Slot`, `usePathname`, `useRouter`, `useLocalSearchP
 
 ## Constraints
 
-- One session, nothing else in it (`STATUS.md` → Next up #1). No feature work.
+- One session, nothing else in it (`STATUS.md` → Next up #7). No feature work.
 - Do not touch `watch/android-wearos` — it is the regression check, not a target.
 - `DESIGN_TOKENS` stays in `packages/core/src/types/event.ts`; no `theme.ts`.
 - No dynamic `import()` in `packages/core` (`CLAUDE.md`).
