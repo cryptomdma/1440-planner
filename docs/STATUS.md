@@ -16,7 +16,7 @@ Watch Face Format face installs and renders on the owner's Galaxy Watch 7. **The
 watch hop itself has not been exercised on hardware yet** — the phone dropped off `adb`
 minutes into pass 5 and never returned; the watch side was proven with an injected
 snapshot. Backend, web prototype and iOS are still scaffolding. Sixteen PRs have merged,
-pass 5 among them; `docs/adb-fixed-ports` is open.
+pass 5 among them; `docs/adb-fixed-ports` (PR #17) is open.
 
 ---
 
