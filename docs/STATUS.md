@@ -532,15 +532,21 @@ PR without `gh`; it is loaded into your context, use it.
 ## Prerequisites — check before writing anything
 
 1. **The phone.** `& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" devices` must
-   list `R5CY72XEJKD`. It dropped off USB five minutes into pass 5 and never came back;
-   `adb connect 192.168.1.91:5555` does not work (tcpip mode was never enabled). If it is
-   missing, stop and tell the owner to re-seat the cable / re-accept the USB-debugging
-   prompt — **nothing in this pass can be verified without it.** Once it is back, consider
-   `adb tcpip 5555` + `adb connect 192.168.1.91:5555` so a USB drop is survivable.
-2. **The watch.** `192.168.1.68:<port>` should still be listed if the wireless-debugging
-   session survived (it survived >24 h across passes 4–5 at `:44881`). Otherwise Developer
-   options → Wireless debugging → `adb pair` (pair-port + code) then `adb connect`
-   (connect-port). Keep it on the charger with *Stay awake while charging*.
+   list `R5CY72XEJKD` as `device`. It dropped off USB five minutes into pass 5 and came back
+   only after the session ended; the re-plug showed `unauthorized` until the USB-debugging
+   prompt was accepted on the phone. If it is missing or unauthorized, stop and tell the
+   owner to re-seat the cable and tap **Allow** (with *Always allow from this computer*) —
+   **nothing in this pass can be verified without it.** Still USB-only
+   (`service.adb.tcp.port` is empty); `adb tcpip 5555` + `adb connect 192.168.1.91:5555`
+   would make a cable drop survivable, the way the watch now is. The installed build is
+   still the pass-4 APK (`lastUpdateTime=2026-09-23 22:17`), i.e. **without** the module.
+2. **The watch is on a fixed port now:** `adb connect 192.168.1.68:5555`. It was switched to
+   legacy tcpip mode on 2026-09-24 (`adb -s <old-port> tcpip 5555`, issued over the existing
+   wireless link since the watch has no USB data path), because the pairing-flow port rotates
+   whenever adbd restarts. Verified to survive screen-off and a disconnect. **It will not
+   survive a watch reboot** (`persist.adb.tcp.port` needs root): after a restart, re-pair once
+   via Developer options → Wireless debugging → `adb pair <ip>:<pair-port> <code>`, then
+   `adb connect <ip>:<connect-port>` and re-issue `adb tcpip 5555`. Keep it on the charger.
 3. **Metro.** Pass 5 left a fresh detached `npx expo start` on :8081 (started ~15:05 on
    2026-09-24). `Get-NetTCPConnection -LocalPort 8081 -State Listen` → if it is alive, reuse
    it (JS-only edits Fast-Refresh; a `packages/core` edit needs `am force-stop` + relaunch).
