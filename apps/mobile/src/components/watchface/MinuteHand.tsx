@@ -1,6 +1,6 @@
 import React from 'react';
 import { Line, Circle } from 'react-native-svg';
-import { MINUTES_IN_DAY, DESIGN_TOKENS as C } from '@1440/core';
+import { MINUTES_IN_DAY, DESIGN_TOKENS as C, polarToCart } from '@1440/core';
 
 interface Props {
   cx:            number;
@@ -11,17 +11,13 @@ interface Props {
 }
 
 export default function MinuteHand({ cx, cy, r, currentMinute, accentColor }: Props) {
-  const angle   = (currentMinute / MINUTES_IN_DAY) * 360 - 90;
-  const rad     = (angle * Math.PI) / 180;
-  const length  = r * 0.62;
-  const x2      = cx + length * Math.cos(rad);
-  const y2      = cy + length * Math.sin(rad);
+  const tip = polarToCart(cx, cy, r * 0.62, (currentMinute / MINUTES_IN_DAY) * 360);
 
   return (
     <>
       <Line
         x1={cx} y1={cy}
-        x2={x2} y2={y2}
+        x2={tip.x} y2={tip.y}
         stroke={accentColor}
         strokeWidth={2.2}
         strokeLinecap="round"

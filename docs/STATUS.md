@@ -14,9 +14,9 @@ linked block. **Android watch sync is verified on hardware as of pass 6:** the
 Data Layer on every calendar/settings change, once a minute while the app is open, and on
 foreground; `watch/android-wearos`'s `DataLayerClient` on the owner's Galaxy Watch 7
 receives each one 3.5–4 s later and refreshes the two complications its Watch Face Format
-face shows. Backend, web prototype and iOS are still scaffolding. Seventeen PRs have
-merged (passes 1–5 plus the pass-6 handoff docs); `feat/watch-sync-resync` (PR #18,
-pass 6) is open.
+face shows. Backend, web prototype and iOS are still scaffolding. Eighteen PRs have
+merged, pass 6 among them (#18, `a87dc52`); `fix/watch-arc-rotation` (PR #19) is open.
+The owner's feature backlog is staged as passes 7–12 under **Next up**.
 
 ---
 
@@ -156,7 +156,14 @@ tie the "scheduled" look to a category. Pass 4 mapped only the exact match (`#38
 
 **Unimplemented settings.** `highlightConflicts` has a Settings toggle and store field but
 no rendering behavior in `DayGrid`. Repeat-series edit/delete scope has store support
-(`deleteSeriesFromDate`) but no UI.
+(`deleteSeriesFromDate`) but no UI — being replaced wholesale in pass 8, see Decisions on
+record.
+
+**Numeric inputs coerce on every keystroke.** `TaskBacklog.tsx:129` is
+`setNewDur(Math.max(5, parseInt(t) || 30))`, so backspacing to empty snaps the field to 30
+and typing "3" on the way to "30" snaps it to 5 — the duration is effectively uneditable.
+`RepeatPicker.tsx:48` and `:58` do the same to interval and count. The fix is one shared
+numeric input that holds the raw string and coerces on blur; pass 9.
 
 **Dead code.** `apps/mobile/src/navigation/RootNavigator.tsx` is 0 bytes — a leftover from a
 react-navigation approach abandoned for expo-router. Safe to delete.
@@ -176,6 +183,24 @@ a `packages/core/src/theme.ts` that was deliberately not created (see `DESIGN_TO
 
 ## Decisions on record
 
+- **Repeating blocks become *rules expanded at read time*, not materialised rows**
+  (decided 2026-09-24, before any real repeat data exists — implementation is pass 8).
+  Today `expandRepeat()` writes N concrete `CalendarEvent`s up front, which cannot express
+  "forever" and makes "cancel from here on" a bulk delete. Instead a series is stored once
+  as its base event + `RepeatConfig`, and reads expand it into virtual occurrences for the
+  requested date range. Consequences, all deliberate:
+  - "Forever" is the *absence* of `endDate`/`count`, not a large number.
+  - "Cancel from this date" sets `endDate`; "cancel all" deletes the rule. Both O(1).
+  - Editing or deleting one occurrence needs per-series `exceptions: string[]` and
+    `overrides: Record<date, Partial<CalendarEvent>>`.
+  - A virtual occurrence needs a stable synthetic id (`${seriesId}:${date}`) for React
+    keys, drag/resize and todo links.
+  - **Every `events.filter(e => e.date === …)` in the tree must move to the selector** —
+    `day.tsx`, `_layout.tsx` (notifications *and* watch sync), `watchSync.ts`,
+    `TaskBacklog.tsx`. That list is the real cost, and it only grows.
+  The rejected alternative was a rolling materialisation horizon (~90 days, extended
+  lazily): less code now, but it keeps the bulk-delete semantics and silently caps
+  "forever".
 - **No `packages/core/src/theme.ts`.** `DESIGN_TOKENS` stays in `types/event.ts` so the
   palette has exactly one home. Overrides `CLAUDE_CODE_HANDOFF.md:566`.
 - **Expo Go is not a supported path.** SDK 51 predates store Expo Go's supported range.
@@ -186,22 +211,87 @@ a `packages/core/src/theme.ts` that was deliberately not created (see `DESIGN_TO
 
 ## ➡️ Next up
 
-Candidates for the next pass, ordered by leverage:
+The owner's feature notes (2026-09-24) are merged into this list and staged as passes.
+The ordering has two hard constraints: **categories must precede the watch rings** (the
+outer ring is driven by category time ranges — building the rings first means building
+them twice), and **the repeat rework should land early**, while the only repeating data
+in existence is disposable test data.
 
-1. **SDK upgrade off 51.** Resolves the dependency rot, re-enables Expo Go, and removes the
-   `createExpoConfig` up-to-date trap. Invasive; deserves its own session with nothing else
-   in it — the pass-7 handoff below is written for it.
-2. **Per-block arcs on the WFF face** (Known debt) — a design pass; the transport it needs
-   is now verified end to end.
-3. **Watch resync while the phone app is backgrounded** (Known debt) — native-side timer
-   or watch-side current/next computation.
-4. **`syncIOS` via WatchConnectivity** — blocked on an iOS build path (no Mac, no EAS).
+7. **SDK upgrade off 51.** Resolves the dependency rot, re-enables Expo Go, and removes
+   the `createExpoConfig` up-to-date trap. Invasive; its own session, nothing else in it.
+   The handoff below is written for it. First because everything after it is easier on a
+   current SDK.
+8. **Repeat, finished.** Rule-based virtual expansion (see Decisions on record), "forever",
+   cancel with scope ("this and future" / "all"), and a real date picker in the New Time
+   Block date field (it is a bare numeric `TextInput` today,
+   `BlockModal.tsx:155-162`). Clears the repeat half of "Unimplemented settings".
+9. **Tasks.** A shared numeric input that holds the raw string and coerces on blur —
+   `TaskBacklog.tsx:129` (`Math.max(5, parseInt(t) || 30)`) makes the duration field
+   impossible to clear or to type "30" into, and `RepeatPicker.tsx:48,58` has the same
+   bug. Then open/edit a task on row press (`TodoRow` has buttons but no row handler) and
+   repeat on tasks (`Todo` has no repeat field at all).
+10. **Schedule view.** An agenda list of blocks across days. Self-contained; no core
+    changes.
+11. **Categories.** Add/delete/edit, plus per-category time ranges (`Personal 06:00–12:00`,
+    `Work 12:00–18:00`, …) generalising today's single wake/sleep window. **The heavy
+    one:** `CategoryId` is a TS union and `CATEGORIES` a frozen const in
+    `types/event.ts:3-18`, so this means a new persisted store, `id: string`, every
+    `CATEGORIES.find()` rewritten, and a policy for blocks whose category was deleted.
+    The watch is safe — `buildWatchSnapshot` already resolves colours to hex at send time.
+12. **Watch face rings** — the per-block arcs Known debt, in the owner's two-ring form:
+    a thin outer ring for category time ranges, thicker inner rings for actual blocks.
+    Needs 11.
+
+Not staged, deliberately:
+- **A 12/24-hour dial toggle.** On a 12-hour dial every block appears twice (the owner's
+  own "possibly double stacked" note), and `WATCH_FACE_ROADMAP.md` closes by calling the
+  1440-minute sweep the product's unfair advantage. Worth settling as a product question
+  first — a 12-hour *hand* for clock legibility is a different, smaller feature than a
+  12-hour *dial*.
+- **Watch resync while the phone app is backgrounded** (Known debt) — native-side timer
+  or watch-side current/next computation.
+- **`syncIOS` via WatchConnectivity** — blocked on an iOS build path (no Mac, no EAS).
 
 ---
 
 ## Session log
 
-### 2026-09-24 — Pass 6: Phase 6 watch sync, part 2 — phone → watch verified, resync timer (PR #18)
+### 2026-09-24 — Pass 6 follow-up: watch-preview arcs were a quarter-turn out; backlog staged (PR #19)
+Branch `fix/watch-arc-rotation`, from `main` at `a87dc52`. JS-only, no rebuild.
+
+**The bug.** `polarToCart()` (`packages/core/src/utils/time.ts:27`) applies the −90° that
+turns SVG's 0°-is-east into 0°-is-12-o'clock **itself**. Two callers subtracted it a
+second time — `EventArcs.tsx:19-20` and the progress sweep in `WatchCanvas.tsx:42-43` —
+so both were drawn a quarter-turn counter-clockwise, while the minute hand, the 96-tick
+ring and the hour labels did their own trig and were right. On-device at 10:08 PM a
+10:00 PM block sat at the 7 o'clock position instead of just left of `12A`. The owner
+reported it as "mapping to a traditional 12-hour watch face"; at that hour the two errors
+land close together, but it is a 90° rotation, not a 12-hour mapping.
+
+**Root cause, not a port regression.** `apps/web/src/App.jsx:58` has the identical
+`polarToCart` and the identical doubled call sites — the prototype was wrong first and the
+React Native port copied it faithfully.
+
+**Fix.** Dropped the extra −90 at both call sites, and converted the three *correct*
+sites (hand, ticks, labels) to use `polarToCart` too, so the codebase has one angle
+convention instead of two side by side — which is how the bug happened. `polarToCart`
+now documents the convention. The same four call sites in `apps/web/src/App.jsx` were
+corrected **by inspection only** (that app has 0-byte entry files and cannot boot).
+
+**Verification.** Watch tab, 10:29 PM, three blocks (8:44 PM, 10:00 PM, 10:45 PM): all
+three arcs now sit between `6P` and `12A` clustered around the hand, and the count-up
+sweep's gap is at the top rather than the lower left. Before/after screenshots in the PR.
+`npx tsc --noEmit` clean on `apps/mobile` and `packages/core`.
+
+**Also.** The owner's feature notes were compared against `WATCH_FACE_ROADMAP.md` and
+staged as passes 7–12 under Next up, and the repeat-model fork was decided ahead of
+implementation (Decisions on record) — rule-based virtual expansion, chosen while no real
+repeating data exists. Three items in those notes turned out to be existing bugs or
+half-built features rather than new work: the arc rotation (fixed here), the task-duration
+field that cannot be cleared (`TaskBacklog.tsx:129`, pass 9) and repeat cancellation
+(`deleteSeriesFromDate` has existed with no UI since before pass 4, pass 8).
+
+### 2026-09-24 — Pass 6: Phase 6 watch sync, part 2 — phone → watch verified, resync timer (PR #18, merged `a87dc52`)
 Branch `feat/watch-sync-resync`, from `main` at `b796047` (PR #17 merged). JS-only on the
 phone; no native rebuild — the pass-5 APK was installed as-is (`adb install -r`, 159 MB,
 `lastUpdateTime=2026-09-24 19:25`). Phone `R5CY72XEJKD` on USB **and** `192.168.1.91:5555`
@@ -622,10 +712,16 @@ confirmed afterwards that `npx expo run:android` builds and launches on a physic
 
 # 1440 Planner — Pass 7: Expo SDK upgrade off 51 (dependency rot, `createExpoConfig` trap, Expo Go)
 
-Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-24. PR #18
-(`feat/watch-sync-resync`, pass 6) should be **merged** — check `git log main` for
-`feat(watch-sync): resync every minute and on foreground`. If it is not there, branch from
-`feat/watch-sync-resync` instead (this pass edits `_layout.tsx` too) and say so in the PR.
+Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-24. Pass 6
+(PR #18) is merged as `a87dc52`. PR #19 (`fix/watch-arc-rotation`) should also be
+**merged** — check `git log main` for `fix(watchface): arcs were a quarter-turn out`. If
+it is not there, branch from `fix/watch-arc-rotation` instead and say so in the PR.
+
+**This is one of a staged run of passes** — `docs/STATUS.md` → Next up lists 7 through 12,
+built from the owner's feature notes. **Pass 8 is the repeat rework**, whose design is
+already settled under *Decisions on record*; do not re-open that decision here, and do not
+start it here either. This pass is the SDK upgrade and nothing else.
+
 The memory note `device-and-tooling` holds the phone serial, adb path, both devices' fixed
 `:5555` ports, the watch wake/screen-timeout recipe, the unfiltered-logcat recipe (tags
 with a colon cannot be `-s`-filtered), the notification and PICK test recipes and how to
@@ -634,10 +730,13 @@ open a PR without `gh`; it is loaded into your context, use it.
 ## Prerequisites — check before writing anything
 
 1. **Phone** `R5CY72XEJKD` in `adb devices` (USB, or `adb connect 192.168.1.91:5555`);
-   always pass `-s`. Re-issue `adb -s R5CY72XEJKD reverse tcp:8081 tcp:8081` after every
-   install — without it the dev build shows the red "Unable to load script" screen.
-   Check `dumpsys window | findstr mCurrentFocus` before any tap sequence: the owner uses
-   the phone during sessions.
+   always pass `-s`. Re-issue `adb -s <phone> reverse tcp:8081 tcp:8081` after every
+   install — without it the dev build shows the red "Unable to load script" screen; it
+   works over the Wi-Fi transport too. **The USB link dropped twice on 2026-09-24 and the
+   Wi-Fi pin carried both sessions**, so if `device 'R5CY72XEJKD' not found` starts
+   appearing, just switch `-s` to the IP rather than stopping. Check
+   `dumpsys window | findstr mCurrentFocus` before any tap sequence: the owner uses the
+   phone during sessions (a notification shade and two other apps stole taps in pass 6).
 2. **Watch** `adb connect 192.168.1.68:5555`. If `offline`, `adb disconnect` + `connect` in
    a loop with 8 s pauses, then `input keyevent KEYCODE_WAKEUP` and
    `settings put system screen_off_timeout 1800000` (put `60000` back at the end). The
@@ -776,9 +875,13 @@ expo-router 6 still exports `Slot`, `usePathname`, `useRouter`, `useLocalSearchP
   Gradle/`createExpoConfig` evidence, the verification list with logcat excerpts, anything
   left (New Architecture off? `syncIOS`, arcs, background resync).
 - `docs/STATUS.md`: TL;DR PR count and open branch; Known debt → remove "Dependency rot"
-  and "`app.json` edits silently fail"; "Next up" renumber (arcs, background resync, iOS);
-  pass-7 log entry; replace this section with the pass-8 handoff (candidates: per-block
-  arcs via `RANGED_VALUE` slots; background resync from the native module; `syncIOS`).
+  and "`app.json` edits silently fail"; strike item 7 from "Next up" and leave 8–12 as
+  they are; pass-7 log entry; replace this section with **the pass-8 handoff — the repeat
+  rework**, written from *Decisions on record* (rule-based virtual expansion, "forever",
+  cancel with scope, date picker). Carry into it the consumer list that decision names:
+  `day.tsx`, `_layout.tsx` (notifications *and* watch sync), `watchSync.ts`,
+  `TaskBacklog.tsx`, plus synthetic occurrence ids and the store-version migration for
+  existing `seriesId` rows.
 - **Print the pass-8 handoff prompt in full in the chat too**, in one fenced block, as the
   last thing in the session (`CLAUDE.md` → Session workflow).
 - Update the `device-and-tooling` memory note: new Metro PID, whether both `:5555` pins

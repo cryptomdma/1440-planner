@@ -230,8 +230,10 @@ function WatchFace({ currentMinute, events, countMode }) {
   const handAngle  = (currentMinute/MINUTES_IN_DAY)*360-90;
   const handRad    = (handAngle*Math.PI)/180;
   const arcR = r-8;
-  const sa = countMode==="down" ? (currentMinute/MINUTES_IN_DAY)*360-90 : -90;
-  const ea = countMode==="down" ? 270 : (currentMinute/MINUTES_IN_DAY)*360-90;
+  // polarToCart's 0deg is 12 o'clock (it applies the -90 itself) - do not subtract it again.
+  const nowA = (currentMinute/MINUTES_IN_DAY)*360;
+  const sa = countMode==="down" ? nowA : 0;
+  const ea = countMode==="down" ? 360 : nowA;
   const pct = countMode==="down" ? (MINUTES_IN_DAY-currentMinute)/MINUTES_IN_DAY : currentMinute/MINUTES_IN_DAY;
   const arcS = polarToCart(cx,cy,arcR,sa);
   const arcE = polarToCart(cx,cy,arcR,ea);
@@ -248,8 +250,8 @@ function WatchFace({ currentMinute, events, countMode }) {
       })}
       {events.map(ev=>{
         const cat=CATEGORIES.find(c=>c.id===ev.category);
-        const s=polarToCart(cx,cy,r-16,ev.startMinute/MINUTES_IN_DAY*360-90);
-        const e=polarToCart(cx,cy,r-16,(ev.startMinute+ev.duration)/MINUTES_IN_DAY*360-90);
+        const s=polarToCart(cx,cy,r-16,ev.startMinute/MINUTES_IN_DAY*360);
+        const e=polarToCart(cx,cy,r-16,(ev.startMinute+ev.duration)/MINUTES_IN_DAY*360);
         return <path key={ev.id} d={`M${s.x} ${s.y}A${r-16} ${r-16} 0 ${ev.duration>720?1:0} 1 ${e.x} ${e.y}`} fill="none" stroke={cat?.color||"#fff"} strokeWidth="4.5" opacity="0.7"/>;
       })}
       <path d={`M${arcS.x} ${arcS.y}A${arcR} ${arcR} 0 ${pct>0.5?1:0} 1 ${arcE.x} ${arcE.y}`} fill="none" stroke={ac} strokeWidth="2.8" filter="url(#wgl)" strokeLinecap="round"/>
