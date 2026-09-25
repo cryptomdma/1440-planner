@@ -121,10 +121,12 @@ phone app stays closed. Two ways out: a WorkManager/AlarmManager-driven send fro
 native module, or shipping block titles in `events` and letting the watch compute
 current/next itself. Not started.
 
-**Face screenshots show `--` while the watch is locked.** Wear OS blanks complication data
-on a locked watch (`dumpsys trust` → `deviceLocked=1`, lock icon at 12 o'clock). Every
-pass-6 screenshot is `--` for that reason; the DWF runtime's `[12:TEXT] "…"` logcat line
-is the face-side evidence. Unlocking needs the PIN — the owner's job, not adb's.
+**A locked watch renders both complication slots as `--`.** Wear OS blanks complication
+data whenever `dumpsys trust` says `deviceLocked=1` (lock icon at 12 o'clock) — the data is
+in prefs and the DWF runtime still logs `[12:TEXT] "…"`, but nothing shows. adb cannot
+unlock. Not a bug, but it silently invalidates any face screenshot: check `deviceLocked`
+before believing one. The owner turned off the off-wrist lock and PIN at the end of pass 6,
+so the test watch now renders unlocked.
 
 **`tsc` can fail on a generated file while Metro runs.** Creating files or directories
 outside `src/app` while Metro is up (pass 4's `placeTodo.ts`, pass 5's `modules/`) makes
@@ -261,8 +263,11 @@ for the whole session; watch `192.168.1.68:5555`, off its charger at 100 %.
   to a file via `Start-Process`) and grep. Memory note and README updated.
 - After `adb install -r` the app came up on the red "Unable to load script" screen —
   `adb reverse tcp:8081 tcp:8081` was gone. Re-issued.
-- The watch shows `--` in both slots while **locked** (Known debt above). It was off-wrist
-  all session, so no face screenshot with values exists; the DWF lines are the evidence.
+- The watch showed `--` in both slots for most of the session because it was **locked**
+  off-wrist (Known debt above) — the DWF logcat lines were the only face-side evidence.
+  The owner then turned off the off-wrist lock and PIN, and a cold start at 21:44:53 gave
+  the screenshot the pass had been missing: **`1305` / `MIN ELAPSED` / `PickTest 10:00 PM`**,
+  matching `shared_prefs/1440_watch.xml` exactly.
 - The watch went `offline` twice within a minute of connecting (60 s screen timeout →
   Wi-Fi park; off the charger, so *Stay awake while charging* did nothing).
   `input keyevent KEYCODE_WAKEUP` + `settings put system screen_off_timeout 1800000` kept it
@@ -275,8 +280,6 @@ for the whole session; watch `192.168.1.68:5555`, off its charger at 100 %.
   dev-only artefact, not a bug.
 
 **Not done / caveats**
-- No face screenshot with values (locked watch). Ask the owner to unlock and look: slot 2
-  should read the next block, slot 1 the minute counter with `MIN ELAPSED`.
 - The resync timer stops while the phone app is backgrounded (Known debt / Next up #3).
 - `syncIOS` still a stub; per-block arcs untouched.
 - The phone still carries the pass-2/3 `OtherDay3` test block on 2026-09-24; `WatchProof`
