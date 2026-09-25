@@ -45,6 +45,10 @@ Work happens in **1–2 passes per session**, so continuity matters more than sp
   prerequisites (Metro/device/branch checks), goal, findings-do-not-re-derive (with
   file-and-line citations), constraints, verification steps, wrap-up. It must be detailed
   enough that a fresh session can act on it without re-deriving context.
+- **Also print that handoff prompt in full in the chat, as the last thing you do.** Writing
+  it to `docs/STATUS.md` is not enough on its own — the repo owner starts the next session by
+  pasting it, so it has to be copyable straight from the conversation. Put it in one fenced
+  block, verbatim and complete, after the closing summary. Both places, every time.
 - Cite files as `path/to/file.ts:42` so they're clickable.
 
 ---
