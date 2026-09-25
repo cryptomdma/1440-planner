@@ -34,13 +34,15 @@ export default function WatchCanvas({ currentMinute, events, countMode }: Props)
   const size      = Math.min(width, 380);
   const ac        = countMode === 'down' ? C.cyan : C.amber;
 
-  // Progress arc (count-up: grows, count-down: shrinks)
+  // Progress arc (count-up: grows from midnight, count-down: shrinks toward it).
+  // Angles are clock degrees for polarToCart — 0° is 12 o'clock, so no -90 here.
   const arcR = R - 8;
   const pct  = countMode === 'down'
     ? (MINUTES_IN_DAY - currentMinute) / MINUTES_IN_DAY
     : currentMinute / MINUTES_IN_DAY;
-  const sa   = countMode === 'down' ? (currentMinute / MINUTES_IN_DAY) * 360 - 90 : -90;
-  const ea   = countMode === 'down' ? 270 : (currentMinute / MINUTES_IN_DAY) * 360 - 90;
+  const nowA = (currentMinute / MINUTES_IN_DAY) * 360;
+  const sa   = countMode === 'down' ? nowA : 0;
+  const ea   = countMode === 'down' ? 360  : nowA;
   const arcS = polarToCart(CX, CY, arcR, sa);
   const arcE = polarToCart(CX, CY, arcR, ea);
   const large = pct > 0.5 ? 1 : 0;
@@ -63,15 +65,15 @@ export default function WatchCanvas({ currentMinute, events, countMode }: Props)
 
       {/* 96-tick outer ring */}
       {Array.from({ length: 96 }, (_, i) => {
-        const angle = (i / 96) * 360 - 90;
-        const rad   = (angle * Math.PI) / 180;
+        const angle = (i / 96) * 360;
         const major = i % 4 === 0;
-        const inner = major ? R - 5 : R + 1;
+        const from  = polarToCart(CX, CY, major ? R - 5 : R + 1, angle);
+        const to    = polarToCart(CX, CY, R + 5, angle);
         return (
           <Line
             key={i}
-            x1={CX + inner * Math.cos(rad)}        y1={CY + inner * Math.sin(rad)}
-            x2={CX + (R + 5) * Math.cos(rad)}      y2={CY + (R + 5) * Math.sin(rad)}
+            x1={from.x} y1={from.y}
+            x2={to.x}   y2={to.y}
             stroke={major ? ac : C.L4}
             strokeWidth={major ? 1.8 : 0.6}
             opacity={major ? 0.9 : 0.7}
@@ -108,14 +110,11 @@ export default function WatchCanvas({ currentMinute, events, countMode }: Props)
 
       {/* Hour quadrant labels */}
       {HOUR_LABELS.map(({ h, label }) => {
-        const angle = (h / 24) * 360 - 90;
-        const rad   = (angle * Math.PI) / 180;
-        const lx    = CX + (R - 22) * Math.cos(rad);
-        const ly    = CY + (R - 22) * Math.sin(rad) + 2;
+        const p = polarToCart(CX, CY, R - 22, (h / 24) * 360);
         return (
           <G key={h}>
             <SvgText
-              x={lx} y={ly}
+              x={p.x} y={p.y + 2}
               textAnchor="middle"
               fill={C.L3}
               fontSize={5.5}

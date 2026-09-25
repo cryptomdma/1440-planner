@@ -16,8 +16,9 @@ export default function EventArcs({ cx, cy, r, events }: Props) {
       {events.map(ev => {
         const cat   = CATEGORIES.find(c => c.id === ev.categoryId);
         const color = cat?.color ?? '#fff';
-        const sAngle = (ev.startMinute / MINUTES_IN_DAY) * 360 - 90;
-        const eAngle = ((ev.startMinute + ev.durationMinutes) / MINUTES_IN_DAY) * 360 - 90;
+        // polarToCart's 0° is 12 o'clock — do not subtract 90 here.
+        const sAngle = (ev.startMinute / MINUTES_IN_DAY) * 360;
+        const eAngle = ((ev.startMinute + ev.durationMinutes) / MINUTES_IN_DAY) * 360;
         const s      = polarToCart(cx, cy, r, sAngle);
         const e      = polarToCart(cx, cy, r, eAngle);
         const large  = ev.durationMinutes > 720 ? 1 : 0;

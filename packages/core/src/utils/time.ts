@@ -24,6 +24,13 @@ export function formatDuration(minutes: number): string {
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
 
+/**
+ * Polar → cartesian on a clock dial: **`angleDeg` 0° is 12 o'clock**, increasing
+ * clockwise. The -90° that rotates SVG's 0°-is-east into that convention is applied
+ * here, once — callers pass a plain `minute / MINUTES_IN_DAY * 360` and must NOT
+ * subtract 90 themselves. Doing so rotates the result a quarter-turn
+ * counter-clockwise, which is how the watch-face event arcs were wrong until pass 7.
+ */
 export function polarToCart(
   cx: number, cy: number, r: number, angleDeg: number
 ): { x: number; y: number } {
