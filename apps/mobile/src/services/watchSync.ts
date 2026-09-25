@@ -71,9 +71,10 @@ export async function syncToWatch(snapshot: WatchSnapshot): Promise<void> {
   }
 }
 
-// Fire-and-forget: the calendar subscription in _layout.tsx does not await this, so
-// failures are logged here rather than surfaced. Sends only happen on calendar changes;
-// there is no timer-driven resync yet (the watch derives the minute from its own clock).
+// Fire-and-forget: _layout.tsx does not await this, so failures are logged here rather
+// than surfaced. Sent on calendar/settings changes, once a minute while foregrounded and
+// on foreground — the resync loop lives in _layout.tsx. Verified on hardware in pass 6:
+// putDataItem → the watch's DataLayerClient.onDataChanged took ~3.5 s over Bluetooth.
 async function syncAndroid(snapshot: WatchSnapshot): Promise<void> {
   if (!WearableDataLayer) {
     if (__DEV__) console.log('[watchSync:android] native module missing — rebuild the app');

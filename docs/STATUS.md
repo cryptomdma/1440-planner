@@ -9,14 +9,14 @@ The other docs describe *intent*, and some of it predates what actually shipped.
 
 The Expo app works and is genuinely usable: it persists data, fires punctual local
 notifications, cold-starts on the Day screen, and the todo → calendar PICK flow places a
-linked block. As of pass 5 the **Android watch sync transport exists end to end**: a
-`WearableDataLayer` Expo local module on the phone writes every calendar change to the
-Wearable Data Layer, and `watch/android-wearos` is a real two-module Gradle project whose
-Watch Face Format face installs and renders on the owner's Galaxy Watch 7. **The phone →
-watch hop itself has not been exercised on hardware yet** — the phone dropped off `adb`
-minutes into pass 5 and never returned; the watch side was proven with an injected
-snapshot. Backend, web prototype and iOS are still scaffolding. Sixteen PRs have merged,
-pass 5 among them; `docs/adb-fixed-ports` (PR #17) is open.
+linked block. **Android watch sync is verified on hardware as of pass 6:** the
+`WearableDataLayer` Expo local module on the phone writes a `WatchSnapshot` to the Wearable
+Data Layer on every calendar/settings change, once a minute while the app is open, and on
+foreground; `watch/android-wearos`'s `DataLayerClient` on the owner's Galaxy Watch 7
+receives each one 3.5–4 s later and refreshes the two complications its Watch Face Format
+face shows. Backend, web prototype and iOS are still scaffolding. Seventeen PRs have
+merged (passes 1–5 plus the pass-6 handoff docs); `feat/watch-sync-resync` (PR #18,
+pass 6) is open.
 
 ---
 
@@ -39,6 +39,14 @@ pass 5 among them; `docs/adb-fixed-ports` (PR #17) is open.
   switch abandons it. All three paths share `apps/mobile/src/services/placeTodo.ts`.
   Deleting a placed block returns the todo to `pending`; UNDO re-links it.
 - **Watch** — SVG watch-face *preview*, phone-side only
+- **Watch sync (Android, passes 5–6)** — `apps/mobile/modules/wearable-data-layer/` (Expo
+  local module, Kotlin) puts the `WatchSnapshot` JSON at Data Layer path `/1440/snapshot`.
+  `apps/mobile/src/app/_layout.tsx` sends it after hydration, on every calendar change,
+  when count mode / wake / sleep change, once a minute while foregrounded, and on
+  foreground (store-driven sends are debounced 500 ms, so a drag is one write). The
+  snapshot is always **today's**, whichever day the phone is browsing. Verified on the
+  Galaxy Watch 7: phone `putDataItem` → watch `DataLayerClient.onDataChanged` in 3.5–4 s,
+  complications refreshed via `requestUpdateAll()`.
 - **Settings** — count mode, default duration, auto-schedule buffer, notification lead time,
   wake/sleep minutes (reachable only via the gear on the Day screen, not the tab bar)
 - **Local notifications** — one reminder per block on *today*, fired `leadTimeMinutes`
@@ -61,8 +69,8 @@ pass 5 among them; `docs/adb-fixed-ports` (PR #17) is open.
 
 | Area | State |
 |---|---|
-| **Watch sync transport** | **Android built in pass 5, phone → watch delivery not yet verified on hardware.** `apps/mobile/modules/wearable-data-layer/` (Expo local module, Kotlin) puts the `WatchSnapshot` JSON at Data Layer path `/1440/snapshot`; `apps/mobile/src/services/watchSync.ts` calls it on every calendar change (no timer). Compiles (`:wearable-data-layer:compileDebugKotlin`), APK built, **not installed on the phone**. iOS bridge is still a `console.log` stub. |
-| **Wear OS watch face** | **Builds, installs and renders (pass 5).** `watch/android-wearos` = `:app` (`com.planner1440.app`: Data Layer listener + two complication data sources + the androidx Canvas face, which **Wear OS 6 blocks outright**) and `:wff` (`com.planner1440.wff`: the no-code Watch Face Format face that actually shows, fed by those complications). Shows 24 h sweep, minute hand, minute counter and next block — **not per-block arcs** (Known debt). |
+| **Watch sync transport — iOS** | `syncIOS()` in `apps/mobile/src/services/watchSync.ts` is a `console.log` stub; no WatchConnectivity module and no iOS build path. **Android is done** — see ✅ Working. |
+| **Wear OS watch face** | **Builds, installs, renders and receives live data (passes 5–6).** `watch/android-wearos` = `:app` (`com.planner1440.app`: Data Layer listener + two complication data sources + the androidx Canvas face, which **Wear OS 6 blocks outright**) and `:wff` (`com.planner1440.wff`: the no-code Watch Face Format face that actually shows, fed by those complications). Shows 24 h sweep, minute hand, minute counter and next block — **not per-block arcs** (Known debt). |
 | **watchOS face** | Real Swift (`WatchFaceView.swift`, `WatchConnectivityManager.swift`, …) but **no `.xcodeproj` / `Package.swift` / `Info.plist`** — cannot compile. |
 | **Backend** | `backend/supabase/` is three **0-byte** files. No `config.toml`, no client dependency. Directory names only. |
 | **`docs/API_SPEC.md`** | Intentionally left empty — there is no backend to spec yet. |
@@ -95,21 +103,30 @@ split bundle`, surfaced as "Possible unhandled promise rejection"). Pass 4 hit t
 `useCalendarStore.deleteEvent` — the todo unlink silently never ran. Use static imports;
 there are no cycles between the stores. Recorded in `CLAUDE.md`.
 
-**Phone → watch delivery is unverified on hardware.** The pass-5 phone vanished from `adb`
-after the first few minutes and never came back (USB; `adb connect 192.168.1.91:5555` is
-not enabled), so `WearableDataLayer.sendSnapshot()` has been compiled but never run. The
-rebuilt phone APK sits at `apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk`
-(built 2026-09-24 14:36) and is **not installed**. The watch side was proven by injecting a
-snapshot into the code app's SharedPreferences (pass-5 log). First thing next pass.
-
 **The WFF face cannot draw per-block arcs, and its minute counter is a complication.**
 Watch Face Format has no way to render N arbitrary arcs from a JSON snapshot, so the face
 shows the 24-hour sweep, the minute hand, the minute counter (slot 1) and the next block
-(slot 2). Complication `UPDATE_PERIOD_SECONDS=60` never fired in 2.5 min of waiting on the
-Galaxy Watch 7 (the platform clamps to 300 s), so between snapshots the counter can be up
-to 5 min stale; `DataLayerClient` calls `requestUpdateAll()` on every snapshot, which is the
-real refresh path. Options for arcs: one `RANGED_VALUE` slot per block (bounded count) or a
-phone-rendered bitmap complication. Not started.
+(slot 2). Complication `UPDATE_PERIOD_SECONDS=60` never fires on the Galaxy Watch 7 (the
+platform clamps to 300 s); `DataLayerClient` calls `requestUpdateAll()` on every snapshot,
+which is the real refresh path, and since pass 6 the phone resends once a minute while its
+app is foregrounded — so the counter is at most a minute stale while the phone app is open,
+and up to 5 min once it is backgrounded (the timer stops there by design; see Next up).
+Options for arcs: one `RANGED_VALUE` slot per block (bounded count) or a phone-rendered
+bitmap complication. Not started.
+
+**Watch resync stops while the phone app is backgrounded.** RN timers are unreliable in
+the background, so `_layout.tsx` clears the 60 s interval on `AppState` → background and
+resumes on foreground. `nextBlock` on the wrist can therefore go stale for as long as the
+phone app stays closed. Two ways out: a WorkManager/AlarmManager-driven send from the
+native module, or shipping block titles in `events` and letting the watch compute
+current/next itself. Not started.
+
+**A locked watch renders both complication slots as `--`.** Wear OS blanks complication
+data whenever `dumpsys trust` says `deviceLocked=1` (lock icon at 12 o'clock) — the data is
+in prefs and the DWF runtime still logs `[12:TEXT] "…"`, but nothing shows. adb cannot
+unlock. Not a bug, but it silently invalidates any face screenshot: check `deviceLocked`
+before believing one. The owner turned off the off-wrist lock and PIN at the end of pass 6,
+so the test watch now renders unlocked.
 
 **`tsc` can fail on a generated file while Metro runs.** Creating files or directories
 outside `src/app` while Metro is up (pass 4's `placeTodo.ts`, pass 5's `modules/`) makes
@@ -146,7 +163,7 @@ react-navigation approach abandoned for expo-router. Safe to delete.
 
 **No tests, no lint.** No test framework and no `check`/`lint` script in any
 `package.json`. Verification is manual, on-device. `npx tsc --noEmit -p apps/mobile` and
-`-p packages/core` are both clean as of pass 5 (after a Metro restart — see the typed-routes
+`-p packages/core` are both clean as of pass 6 (after a Metro restart — see the typed-routes
 note above). The watch project has no tests either; `gradlew :app:assembleDebug
 :wff:assembleDebug` is the check.
 
@@ -171,19 +188,102 @@ a `packages/core/src/theme.ts` that was deliberately not created (see `DESIGN_TO
 
 Candidates for the next pass, ordered by leverage:
 
-1. **Finish Phase 6 watch sync on hardware.** Reconnect the phone, install the pass-5 APK,
-   and run the phone → watch verification the pass-6 handoff spells out (phone logcat
-   `[watchSync:android]` → watch logcat `1440:DataLayer` → the face's next-block slot).
-   Then timer-driven resync (`currentBlock`/`nextBlock` go stale between edits) and
-   `syncIOS` via WatchConnectivity.
-2. **SDK upgrade off 51.** Resolves the dependency rot, re-enables Expo Go, and removes the
+1. **SDK upgrade off 51.** Resolves the dependency rot, re-enables Expo Go, and removes the
    `createExpoConfig` up-to-date trap. Invasive; deserves its own session with nothing else
-   in it.
-3. **Per-block arcs on the WFF face** (Known debt) — a design pass once 1 is done.
+   in it — the pass-7 handoff below is written for it.
+2. **Per-block arcs on the WFF face** (Known debt) — a design pass; the transport it needs
+   is now verified end to end.
+3. **Watch resync while the phone app is backgrounded** (Known debt) — native-side timer
+   or watch-side current/next computation.
+4. **`syncIOS` via WatchConnectivity** — blocked on an iOS build path (no Mac, no EAS).
 
 ---
 
 ## Session log
+
+### 2026-09-24 — Pass 6: Phase 6 watch sync, part 2 — phone → watch verified, resync timer (PR #18)
+Branch `feat/watch-sync-resync`, from `main` at `b796047` (PR #17 merged). JS-only on the
+phone; no native rebuild — the pass-5 APK was installed as-is (`adb install -r`, 159 MB,
+`lastUpdateTime=2026-09-24 19:25`). Phone `R5CY72XEJKD` on USB **and** `192.168.1.91:5555`
+for the whole session; watch `192.168.1.68:5555`, off its charger at 100 %.
+
+**Verified — the hop pass 5 could not exercise**
+- `+ BLOCK` → `WatchProof`, today 8:15 PM, SCHEDULE BLOCK at 19:30:23. Phone
+  `19:30:23.715 D/1440:WatchSync: putDataItem ok wear://f1448c68/1440/snapshot (349 chars)`
+  → watch `19:30:27.197 D/1440:DataLayer: Received snapshot, currentMinute=1170` →
+  `DWF:WearComplicationProvider [12:TEXT] "WatchProof 8:15 PM"`, `[11:TEXT] "1170"`,
+  `[11:TITLE] "MIN ELAPSED"`. `run-as com.planner1440.app cat shared_prefs/1440_watch.xml`
+  on the watch shows the real JSON where the pass-5 fake snapshot was. Same package name +
+  debug certificate on both halves was the right call — GMS routed it with no pairing work.
+- Delete the block → `[12:TEXT] "OtherDay3 8:44 PM"` (the next real block) 3.6 s later.
+- Settings → COUNT DOWN → `[11:TEXT] "265"`, `[11:TITLE] "MIN LEFT"` in 3.5 s; COUNT UP →
+  `MIN ELAPSED` again (settings are a trigger now, see below).
+- Every delivery this session took 3.5–4 s phone → watch, over Bluetooth.
+
+**Shipped — `apps/mobile/src/app/_layout.tsx`**
+- The watch-sync effect is keyed on `hydrated`, not `currentMinute`, and builds the snapshot
+  from `useCalendarStore.getState()` / `useSettingsStore.getState()` + `getCurrentMinute()`
+  instead of the render closure. **Every trigger goes through one 500 ms trailing
+  debounce** (`sendSoon`): hydration, the calendar subscription, a new settings
+  subscription (`countMode` / `wakeMinute` / `sleepMinute` only), a 60 s `setInterval`
+  (`WATCH_RESYNC_MS`), and `AppState` → `active`. The interval stops on background and
+  restarts on foreground. The uniform debounce is deliberate: a cold start emits
+  `AppState` `background` then `active` ~100 ms after the effect mounts (diagnosed with a
+  temporary log), so an immediate hydration send plus a send-on-active made **two** Data
+  Layer writes per launch — a "transition only" guard did not help, because it *is* a
+  transition. Debouncing everything folds it into one write ~500 ms after hydration.
+- **The snapshot is always `today()`'s**, not `selectedDate`'s. Before, browsing to
+  tomorrow on the phone would have pushed tomorrow's blocks to the wrist.
+- `RESCHEDULE_DEBOUNCE_MS` → `STORE_DEBOUNCE_MS`, shared with the notifications resync.
+  `useCurrentMinute()` is still called (its re-render is what flips `todayStr` at midnight).
+- `watchSync.ts`: comments only. `packages/core` untouched — no new snapshot field.
+- `watch/android-wearos/README.md`: the logcat recipe was unusable (below); rewritten, plus
+  the lock and screen-timeout notes.
+
+**Verification of the timer (handoff steps 5–7, 1)**
+5. Quiet window 19:36:40–19:39:10, no edits: phone sends at 19:37:30 and 19:38:30, watch
+   `Received snapshot` at 19:37:33 and 19:38:33 — one a minute. `KEYCODE_HOME` at 19:39:11 →
+   nothing for 80 s. Launcher relaunch at 19:40:32 → `putDataItem ok` at 19:40:32.965 (one
+   send), watch at 19:40:36. ✅
+6. `am force-stop com.planner1440.app` on the watch (`pidof` empty) → face switched away and
+   back → both slots reloaded from prefs (`[11:TEXT] "1181"`, `[12:TEXT] "OtherDay3 8:44 PM"`);
+   the next tick (19:42:36) arrived in a fresh process (pid 30351). ✅
+7. `npx tsc --noEmit -p apps/mobile` and `-p packages/core` clean — after a Metro restart:
+   `.expo/types/router.d.ts` still carried pass 5's `/..\..\modules\wearable-data-layer\`
+   route (the stale Metro predated the `modules/` fix-up). ✅
+1. Cold start against the new Metro: `Running "main"` → **one** `putDataItem ok` ~1 s later
+   (hydration + the launch `AppState` pair, debounced), watch 3.5 s after that; no
+   `native module missing`. Background → foreground: one send 500 ms after `active`. ✅
+
+**Found on the way**
+- **`logcat -s 1440:WatchSync` cannot work.** logcat splits a filterspec at the *first*
+  colon, so `1440:WatchSync` is tag `1440` at priority `W`; the native lines never showed
+  while `ReactNativeJS` did. Same for `1440:DataLayer` and `DWF:WearComplicationProvider` —
+  pass 5's recipe and the watch README had it wrong. Capture unfiltered (`logcat -v time`
+  to a file via `Start-Process`) and grep. Memory note and README updated.
+- After `adb install -r` the app came up on the red "Unable to load script" screen —
+  `adb reverse tcp:8081 tcp:8081` was gone. Re-issued.
+- The watch showed `--` in both slots for most of the session because it was **locked**
+  off-wrist (Known debt above) — the DWF logcat lines were the only face-side evidence.
+  The owner then turned off the off-wrist lock and PIN, and a cold start at 21:44:53 gave
+  the screenshot the pass had been missing: **`1305` / `MIN ELAPSED` / `PickTest 10:00 PM`**,
+  matching `shared_prefs/1440_watch.xml` exactly.
+- The watch went `offline` twice within a minute of connecting (60 s screen timeout →
+  Wi-Fi park; off the charger, so *Stay awake while charging* did nothing).
+  `input keyevent KEYCODE_WAKEUP` + `settings put system screen_off_timeout 1800000` kept it
+  reachable for the rest of the session (19:26 → 20:00, off the charger). **Put back to
+  `60000` at the end of the session.**
+- The owner was using the phone: the GitHub app was in front for a minute and swallowed a
+  whole tap sequence. Every tap sequence now checks `dumpsys window` → `mCurrentFocus`
+  first and finds buttons through `uiautomator dump` instead of fixed coordinates.
+- Fast Refresh of `_layout.tsx` re-runs its effects in a burst (five sends in 5 s) — a
+  dev-only artefact, not a bug.
+
+**Not done / caveats**
+- The resync timer stops while the phone app is backgrounded (Known debt / Next up #3).
+- `syncIOS` still a stub; per-block arcs untouched.
+- The phone still carries the pass-2/3 `OtherDay3` test block on 2026-09-24; `WatchProof`
+  was deleted as part of step 3.
 
 ### 2026-09-24 — Pass 5: Phase 6 watch sync, part 1 — Wear OS build + Data Layer module (PR #16, merged `a8d85ee`)
 Branch `feat/watch-sync-android`. Native work on both sides. Watch: the owner's physical
@@ -514,174 +614,173 @@ confirmed afterwards that `npx expo run:android` builds and launches on a physic
 
 ---
 
-## 🤝 Handoff prompt (pass 6)
+## 🤝 Handoff prompt (pass 7)
 
 > Standing rule (`CLAUDE.md` → Session workflow): every session ends by replacing this
 > section with the *next* session's prompt, in this format. Paste the block below as the
 > opening message of the next session.
 
-# 1440 Planner — Pass 6: Phase 6 watch sync, part 2 (prove phone → watch on hardware, then keep it fresh)
+# 1440 Planner — Pass 7: Expo SDK upgrade off 51 (dependency rot, `createExpoConfig` trap, Expo Go)
 
-Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-24. PR #16
-(`feat/watch-sync-android`, pass 5) is **merged** as `a8d85ee`, so branch from an updated
-`main`. The memory note `device-and-tooling` holds the phone
-serial, adb path, the watch's connect flow, the first-time face-picker recipe, the
-`DEBUG_SURFACE` switch broadcast, the `run-as` snapshot-injection recipe and how to open a
-PR without `gh`; it is loaded into your context, use it.
+Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-24. PR #18
+(`feat/watch-sync-resync`, pass 6) should be **merged** — check `git log main` for
+`feat(watch-sync): resync every minute and on foreground`. If it is not there, branch from
+`feat/watch-sync-resync` instead (this pass edits `_layout.tsx` too) and say so in the PR.
+The memory note `device-and-tooling` holds the phone serial, adb path, both devices' fixed
+`:5555` ports, the watch wake/screen-timeout recipe, the unfiltered-logcat recipe (tags
+with a colon cannot be `-s`-filtered), the notification and PICK test recipes and how to
+open a PR without `gh`; it is loaded into your context, use it.
 
 ## Prerequisites — check before writing anything
 
-1. **The phone.** `& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" devices` must
-   list `R5CY72XEJKD` as `device`. It dropped off USB five minutes into pass 5 and came back
-   only after the session ended; the re-plug showed `unauthorized` until the USB-debugging
-   prompt was accepted on the phone. If it is missing or unauthorized, stop and tell the
-   owner to re-seat the cable and tap **Allow** (with *Always allow from this computer*) —
-   **nothing in this pass can be verified without it.** It is also reachable over Wi-Fi now:
-   `adb connect 192.168.1.91:5555` (tcpip mode set 2026-09-24, so a cable drop no longer ends
-   the session). With both links up `adb devices` lists the phone **twice**, so always pass
-   `-s R5CY72XEJKD` or `-s 192.168.1.91:5555` rather than relying on a single default device.
-   The installed build is still the pass-4 APK (`lastUpdateTime=2026-09-23 22:17`), i.e.
-   **without** the module — installing the pass-5 one is step 1 of the goal below.
-2. **The watch is on a fixed port now:** `adb connect 192.168.1.68:5555`. It was switched to
-   legacy tcpip mode on 2026-09-24 (`adb -s <old-port> tcpip 5555`, issued over the existing
-   wireless link since the watch has no USB data path), because the pairing-flow port rotates
-   whenever adbd restarts. Verified to survive screen-off and a disconnect. **It will not
-   survive a watch reboot** (`persist.adb.tcp.port` needs root): after a restart, re-pair once
-   via Developer options → Wireless debugging → `adb pair <ip>:<pair-port> <code>`, then
-   `adb connect <ip>:<connect-port>` and re-issue `adb tcpip 5555`. **A refused connection
-   usually means the watch is asleep, not that the pin broke** — Galaxy Watches park Wi-Fi
-   when the screen is off and the phone is in Bluetooth range. Tap the screen, then
-   `adb disconnect` + `adb connect` again. Keep it on the charger, and note that *Stay awake
-   while charging* stops holding the screen once the battery reads 100 %.
-3. **Metro.** Pass 5 left a fresh detached `npx expo start` on :8081 (started ~15:05 on
-   2026-09-24). `Get-NetTCPConnection -LocalPort 8081 -State Listen` → if it is alive, reuse
-   it (JS-only edits Fast-Refresh; a `packages/core` edit needs `am force-stop` + relaunch).
-   Kill the tree (`taskkill /PID <pid> /T /F`) only if you change native code again.
-4. **The phone APK from pass 5 is built but not installed:**
-   `apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk` (159 MB, 2026-09-24
-   14:36, contains `:wearable-data-layer`). `adb -s R5CY72XEJKD install -r <apk>` is the
-   fastest path; a plain `npx expo run:android` (Metro killed first) rebuilds it in ~3 min
-   if anything native changed. Both watch APKs *are* installed and current
-   (`com.planner1440.app` 1.0.0 and `com.planner1440.wff` 1.0.0 built from the PR's tree).
-5. Branch: `git checkout main; git pull; git checkout -b feat/watch-sync-resync`. **PR #17
-   (`docs/adb-fixed-ports`) may still be open** — it carries this handoff, the fixed-port
-   notes and the `CLAUDE.md` rule about printing the handoff in chat. If `git log main`
-   does not contain it, branch from `docs/adb-fixed-ports` instead so those docs are not
-   lost, and say so in the PR.
+1. **Phone** `R5CY72XEJKD` in `adb devices` (USB, or `adb connect 192.168.1.91:5555`);
+   always pass `-s`. Re-issue `adb -s R5CY72XEJKD reverse tcp:8081 tcp:8081` after every
+   install — without it the dev build shows the red "Unable to load script" screen.
+   Check `dumpsys window | findstr mCurrentFocus` before any tap sequence: the owner uses
+   the phone during sessions.
+2. **Watch** `adb connect 192.168.1.68:5555`. If `offline`, `adb disconnect` + `connect` in
+   a loop with 8 s pauses, then `input keyevent KEYCODE_WAKEUP` and
+   `settings put system screen_off_timeout 1800000` (put `60000` back at the end). The
+   watch is **not** a target of this pass — it is the regression check for the sync.
+3. **Metro.** Pass 6 left a detached `cmd /c npx expo start` (cmd PID 30188) on :8081.
+   This pass rebuilds native code and changes `metro.config.js`, so kill the tree first:
+   `taskkill /PID 30188 /T /F`; verify with `Get-NetTCPConnection -LocalPort 8081 -State
+   Listen`.
+4. **JDK.** `apps/mobile/android/gradle.properties` carries
+   `org.gradle.java.home=C:\\Program Files\\Android\\Android Studio\\jbr` (JDK 17). Newer
+   SDK templates still want 17; keep that line whatever else prebuild regenerates.
+5. Branch: `git checkout main; git pull; git checkout -b chore/sdk-upgrade`.
 
 ## Goal
 
-Prove the one hop pass 5 could not: a calendar change on the phone reaches
-`DataLayerClient.onDataChanged` on the watch and the face's *next block* slot changes.
-Then make the snapshot stay fresh between edits (timer-driven resync) so `currentBlock` /
-`nextBlock` are never more than a minute stale. Closes STATUS "Next up" #1's first half;
-rewrites the "Watch sync transport" row to "verified on hardware".
+Move `apps/mobile` from Expo SDK 51 to the current SDK — root `node_modules` already holds
+SDK 55 packages, so 55 is the natural target; step down to 52 only if 55 fails outright —
+delete the three workarounds that exist purely because of the version mix, and prove the
+app on the phone is unchanged, including watch sync. Closes STATUS "Next up" #1 and two
+Known-debt paragraphs ("Dependency rot", "`app.json` edits silently fail").
 
-## Findings from pass 5 — do not re-derive
+## Findings — do not re-derive
 
-**Phone side.** `apps/mobile/modules/wearable-data-layer/index.ts:15` exports the module
-via `requireOptionalNativeModule` (null on an APK without it).
-`…/android/src/main/java/com/planner1440/wearable/WearableDataLayerModule.kt:29-51` is
-`AsyncFunction("sendSnapshot")`: `PutDataMapRequest.create("/1440/snapshot")`, keys
-`snapshot_json` + `ts` (long, keeps identical re-sends flowing), `setUrgent()`,
-`putDataItem`, logs `1440:WatchSync putDataItem ok wear://…/1440/snapshot (N chars)` on
-success. `apps/mobile/src/services/watchSync.ts:77-90` (`syncAndroid`) awaits it and logs
-`[watchSync:android] <min> min, <n> events` in dev. The only trigger is the calendar
-subscription at `apps/mobile/src/app/_layout.tsx:66-81`; it resubscribes whenever
-`currentMinute` changes (every 30 s via `useCurrentMinute`) but sends **only on store
-changes**. Nothing sends on a timer, on foreground, or on watch reconnect.
+**Where the rot is.** `apps/mobile/package.json:15-28` pins SDK 51: `expo ~51.0.0`,
+`expo-router ~3.5.0`, `react-native 0.74.0`, `react 18.2.0`, `expo-notifications ~0.28.0`,
+`expo-constants ~16.0.0`, `expo-linking ~6.3.1`, `expo-haptics ~13.0.0`,
+`react-native-screens ~3.31.1`, `react-native-safe-area-context ~4.10.1`,
+`react-native-reanimated ~3.10.0`, `react-native-gesture-handler ~2.16.0`,
+`react-native-svg ~15.2.0`, `@react-native-async-storage/async-storage ^1.23.0`. Root
+`package.json:13-19` has an `overrides` block forcing `expo-constants 16.0.2`,
+`expo-linking 6.3.1`, `react-native-screens ~3.31.1`, `react-native-safe-area-context
+~4.10.1`, `react-native-svg ~15.2.0` — and root `node_modules` *still* ends up with SDK 55
+copies of the first four (`CLAUDE.md` → Load-bearing code). That mix is why
+`apps/mobile/metro.config.js` looks the way it does.
 
-**Watch side.** `watch/android-wearos/app/src/main/java/com/planner1440/watchface/DataLayerClient.kt:42-54`
-(`onDataChanged`, skips `TYPE_DELETED`, logs `1440:DataLayer Received snapshot,
-currentMinute=…`) → `:64-80` persists to SharedPreferences `1440_watch/snapshot`, calls
-`requestUpdateAll()` on both complication sources, rebroadcasts in-process.
-`ComplicationHelper.kt:36-47` (minute from the watch clock, `countMode` from the snapshot,
-title `MIN LEFT`/`MIN ELAPSED`); `:56` and `:92` read the prefs. The WFF face
-`watch/android-wearos/wff/src/main/res/raw/watchface.xml:321-348` binds slot 1 → 
-`MinuteCounterComplicationService`, slot 2 → `NextBlockComplicationService` (generated by
-`tools/make-watchface.ps1`). `WatchFaceService.kt:33` (Canvas face) is **blocked by Wear
-OS 6 on this watch** — ignore it for verification.
+**The three workarounds to delete once versions are coherent** — all in
+`apps/mobile/metro.config.js`: `resolver.nodeModulesPaths` (`:12-15`),
+`resolver.blockList` for the root `react-native-screens` / `react-native-safe-area-context`
+(`:20-26`), and the `resolver.resolveRequest` override (`:39-67`) that redirects
+`expo-linking` to the local pure-JS copy and re-resolves HMR's `./node_modules/…` paths.
+**Keep** `watchFolders` (`:7-8`) and `extraNodeModules['@1440/core']` (`:28-31`) — those are
+the monorepo, not the rot. Delete the root `overrides` block in the same commit, `npm
+install` from the root, and confirm one version each with `npm ls expo-constants
+expo-linking react-native-screens react-native-safe-area-context`.
 
-**What was proven and what was not.** With a fake snapshot written into
-`com.planner1440.app`'s prefs (recipe in the memory note) the face showed `542 / MIN LEFT /
-FakeStandu 3:30 PM` — everything from the prefs write onward works, including after
-`am force-stop`. **Never exercised:** `putDataItem` on the phone, GMS routing to the
-watch node, `onDataChanged`. The untested assumption is that same `applicationId`
-(`com.planner1440.app` on both) + same debug certificate is enough for the Data Layer to
-pair the two apps; that is the documented requirement and why pass 5 chose it over the
-handoff's `com.planner1440.watchface`.
+**Two hand edits in the gitignored `android/` exist only for the mix** (`CLAUDE.md`):
+`settings.gradle` → `useExpoModules(exclude: ['expo-linking'])` (the SDK 55 `expo-linking`
+did not build with the SDK 51 `expo-module-gradle-plugin`) and `gradle.properties` →
+`org.gradle.java.home`. **This is the one pass where regenerating `android/` is right:**
+`npx expo prebuild --platform android` (still no `--clean`; diff first). Expect the
+`expo-linking` exclusion to become unnecessary — drop it. Re-apply `org.gradle.java.home`.
+Check the regenerated `AndroidManifest.xml` still has `<data android:scheme="planner1440"/>`
+and `android.permission.USE_EXACT_ALARM` — both come from `app.json`, so prebuild should
+emit them; pass 3 had to hand-fix exactly those two when prebuild was skipped.
 
-**Face selection on the watch.** Our face is favourite id 7. Switch to it with
-`adb -s <watch> shell am broadcast -a com.google.android.wearable.app.DEBUG_SURFACE --es operation set-watchface --es watchFaceId com.planner1440.wff`
-(`result=1`), to the owner's normal face with `--ecn component
-com.samsung.android.watch.watchface.ultrainfoboard/com.samsung.android.watch.watchface.ultrainfoboard.UltraInfoBoardWatchFaceService`.
-Switching away and back re-queries both complications immediately; the 60 s
-`UPDATE_PERIOD_SECONDS` never fired in 2.5 min (assume the 300 s clamp). Watch logs:
-`adb -s <watch> logcat -s 1440:DataLayer 1440:WatchFace DWF:WearComplicationProvider` —
-the last tag prints `[11:TEXT] "…"` / `[12:TEXT] "…"` whenever a slot loads data.
+**The `createExpoConfig` trap should disappear** with a newer `expo-constants` (upstream
+marks the task always out-of-date). Prove it on the first build: the Gradle log must show
+`> Task :expo-constants:createExpoConfig` **without** `UP-TO-DATE`, and a cold start must
+land on Day — "Unmatched Route" is the symptom of a stale asset. Delete
+`apps/mobile/node_modules/expo-constants/android/build/generated/assets/expo-constants/`
+before the build regardless, as `CLAUDE.md` says.
 
-**Timer-driven resync — where it goes.** Add it in `_layout.tsx` next to the existing
-subscription: a `setInterval` (60 s, cleared on unmount) and an `AppState` → `active`
-hook that both call the same `sendNow()` used by the subscription; build the snapshot from
-`useCalendarStore.getState()` / `useSettingsStore.getState()` so it does not depend on the
-render closure. The `ts` key in the DataItem already guarantees delivery of identical
-payloads. Consider also sending on watch (re)connect via `CapabilityClient` — optional.
-`buildWatchSnapshot` (`watchSync.ts:24-63`) is the contract; bump `version` if you add a
-field.
+**Code that touches version-sensitive APIs — check each against the installed types
+after the bump, do not assume:**
+- `apps/mobile/src/app/_layout.tsx` — `useRootNavigationState()?.key` gate (expo-router 3
+  → 6), `Notifications.getLastNotificationResponseAsync` /
+  `clearLastNotificationResponseAsync` (expo-notifications 0.28 → current; the clear
+  function has been reshuffled in later versions — if it is gone, guard by response
+  identifier instead), `AppState.addEventListener('change')` subscription (fine),
+  `useCurrentMinute` / `getCurrentMinute` from core (fine).
+- `apps/mobile/src/services/notifications.ts` — the trigger object shape for
+  `scheduleNotificationAsync` changed in later expo-notifications (typed
+  `SchedulableTriggerInputTypes`); `setNotificationChannelAsync` unchanged. Pass 3's 76 ms
+  exact-alarm result is the bar.
+- `apps/mobile/modules/wearable-data-layer/` — `expo-modules-core` `Module` /
+  `ModuleDefinition` / `AsyncFunction` + `Promise` are stable; `requireOptionalNativeModule`
+  from `expo` still exists. `android/build.gradle` applies `expo-module-gradle-plugin`;
+  its template changed after SDK 51 — if configuration fails, compare against a fresh
+  `npx create-expo-module --local` output rather than guessing.
+- `packages/core` — `zustand ^4.5` is fine on React 18.3; if the SDK brings React 19,
+  watch the `create<T>()(persist(...))` typings and `useSyncExternalStore` warnings.
+- `react-native-reanimated` → the SDK's version; `babel.config.js` keeps its plugin last
+  (later SDKs move it to `react-native-worklets` — follow `npx expo install --fix` and
+  `npx expo-doctor`, which say so).
+- **New Architecture** is on by default from SDK 52. All four RN libs here support it. If
+  `DayGrid`'s long-press `Pressable` + `nativeEvent.locationY` maths breaks, set
+  `"newArchEnabled": false` in `app.json` first and note it — do not rewrite `DayGrid` in
+  this pass.
 
-**Traps.**
-- `npx tsc -p apps/mobile` fails on `.expo/types/router.d.ts` if files were created outside
-  `src/app` while Metro ran; restart Metro, re-run (`CLAUDE.md`).
-- PowerShell strips the quotes off `adb shell run-as … sh -c '…'`; call the binary
-  directly (`run-as com.planner1440.app cp …`).
-- The face picker closes on fast swipes; the recipe uses 400 ms swipes with 1.5 s pauses.
-- The watch's `shared_prefs/1440_watch.xml` currently holds the pass-5 **fake** snapshot
-  (`FakeStandup 3:30 PM`, `countMode: down`); the first real snapshot overwrites it — that
-  is also your visual proof of delivery.
+**How to do the bump.** `cd apps/mobile; npx expo install expo@^55 --fix` (or `@^52`)
+rewrites every Expo-managed dependency to the matching version, then `npx expo-doctor`.
+expo-router 6 still exports `Slot`, `usePathname`, `useRouter`, `useLocalSearchParams`,
+`router.setParams` (pass 4 relies on it) and writes `.expo/types/router.d.ts` the same way
+(same typed-routes trap: restart Metro before `tsc` if it shows backslash routes).
 
 ## Constraints
 
-- No `prebuild --clean`, no edits to `metro.config.js` or the two hand-edited files in
-  `android/` (`CLAUDE.md`). Native changes on the phone stay inside `apps/mobile/modules/`.
-- `packages/core` untouched unless the snapshot needs a new field.
-- Android only; `syncIOS()` stays a stub (WatchConnectivity is a later pass).
-- The WFF face's look and per-block arcs are out of scope (STATUS Known debt).
+- One session, nothing else in it (`STATUS.md` → Next up #1). No feature work.
+- Do not touch `watch/android-wearos` — it is the regression check, not a target.
+- `DESIGN_TOKENS` stays in `packages/core/src/types/event.ts`; no `theme.ts`.
+- No dynamic `import()` in `packages/core` (`CLAUDE.md`).
+- `CLAUDE.md` must change in the same PR: its `metro.config.js` section, the two-hand-edits
+  section and the `createExpoConfig` section all describe the pre-upgrade state. Rewrite
+  them to what is still true (probably only `org.gradle.java.home` and the "diff before
+  and after `prebuild`, never `--clean`" rule).
 
 ## Verification (required; `<watch>` = `192.168.1.68:5555`)
 
-0. `adb devices` lists both `R5CY72XEJKD` and `<watch>`.
-1. Install the phone APK, cold-start (`am force-stop` + launcher) → Day. Phone logcat
-   (`adb -s R5CY72XEJKD logcat -s ReactNativeJS 1440:WatchSync`) shows no
-   `native module missing`.
-2. Create a block on **today** at least 30 min in the future (recipe: `+ BLOCK` FAB at
-   (1212, 2755), title, START, SCHEDULE BLOCK at (719, 2917)) → phone logcat
-   `[watchSync:android] <min> min, N events` and `1440:WatchSync putDataItem ok` → watch
-   logcat `1440:DataLayer Received snapshot, currentMinute=<min>` → the face's next-block
-   slot shows that title + time (screenshot: `screencap -p /sdcard/x.png` + `pull`).
-3. Delete the block → watch logcat again → slot shows `No blocks` (or the next real one).
-4. Toggle Settings → count mode → the centre slot title flips between `MIN ELAPSED` and
-   `MIN LEFT` (a settings change alone does **not** trigger the calendar subscription — if
-   it does not flip, that is the timer's job; confirm it flips within 60 s once the timer
-   is in).
-5. Timer: with no edits, watch logcat shows a `Received snapshot` line about once a minute
-   while the app is foregrounded, and one on foreground after backgrounding.
-6. `am force-stop com.planner1440.app` on the watch → complications still show values.
-7. `npx tsc --noEmit -p apps/mobile` clean; `watch/android-wearos` still builds if touched.
+0. `adb devices` lists `R5CY72XEJKD` and `<watch>`.
+1. `npx expo run:android` (Metro killed first) builds; the Gradle log shows
+   `:expo-constants:createExpoConfig` executed (not `UP-TO-DATE`) and
+   `:wearable-data-layer:compileDebugKotlin`.
+2. Cold start (`am force-stop` + launcher) → Day, 3×. `planner1440:///settings` → Settings;
+   ✕ → Day. No LogBox.
+3. Data survived: the pass-2/3 `OtherDay3` block on 2026-09-24 and the settings are still
+   there (same debug keystore). `pm clear` is the rollback if hydration breaks — say so.
+4. Notifications: lead 0, block 3 min out → posted within ~100 ms of the minute (recipe in
+   the memory note); tap with the process killed (`am kill`, not `force-stop`) → Day on the
+   block's date.
+5. PICK flow: Tasks → `+ TASK` → PICK → long-press a free slot → linked block; delete →
+   todo back to PENDING (pass-4 recipe in the memory note).
+6. Watch sync regression (unfiltered logcat on both, memory note): create a block on today
+   ≥ 30 min out → phone `1440:WatchSync putDataItem ok` → watch `1440:DataLayer Received
+   snapshot` within ~4 s → `DWF:WearComplicationProvider [12:TEXT] "<title> <time>"`; then
+   2 min of no edits → two more `Received snapshot` lines from the timer.
+7. `npx tsc --noEmit -p apps/mobile` and `-p packages/core` clean; `npx expo-doctor` clean.
+8. `metro.config.js` is down to `watchFolders` + `extraNodeModules`; the root `overrides`
+   block is gone; `git diff --stat main` shows both.
 
 ## Wrap-up
 
-- Conventional Commits, e.g. `feat(watch-sync): resync every minute and on foreground`,
-  `docs: pass-6 verification of phone → watch delivery`.
-- Push, open a PR through the GitHub API (no `gh`; recipe in the memory note), **do not
-  merge**. PR description: what was verified with logcat excerpts and screenshots, what the
-  timer does, anything left (iOS, arcs).
-- `docs/STATUS.md`: TL;DR PR count and open branch; "Watch sync transport" row → verified;
-  remove the "Phone → watch delivery is unverified" Known-debt paragraph; renumber
-  "Next up"; pass-6 log entry; replace this section with the pass-7 handoff (candidates:
-  SDK upgrade off 51; per-block arcs on the WFF face via `RANGED_VALUE` slots; `syncIOS`
-  via WatchConnectivity). The pass-5 heading already carries its merge sha.
-- **Print the pass-7 handoff prompt in full in the chat too**, in one fenced block, as the
-  last thing in the session — the owner pastes it to start the next one and should not have
-  to open the file for it (`CLAUDE.md` → Session workflow).
-- Update the `device-and-tooling` memory note with how the fixed `:5555` ports held up on
-  both devices, and how long the watch stayed reachable once off the charger.
+- Conventional Commits: `chore(sdk): upgrade to Expo SDK 55`, `chore(sdk): drop the SDK 51
+  resolver workarounds`, `docs: pass-7 …`.
+- Push, open the PR through the GitHub API (no `gh`; recipe in the memory note), **do not
+  merge**. PR description: before/after versions, what was deleted, the
+  Gradle/`createExpoConfig` evidence, the verification list with logcat excerpts, anything
+  left (New Architecture off? `syncIOS`, arcs, background resync).
+- `docs/STATUS.md`: TL;DR PR count and open branch; Known debt → remove "Dependency rot"
+  and "`app.json` edits silently fail"; "Next up" renumber (arcs, background resync, iOS);
+  pass-7 log entry; replace this section with the pass-8 handoff (candidates: per-block
+  arcs via `RANGED_VALUE` slots; background resync from the native module; `syncIOS`).
+- **Print the pass-8 handoff prompt in full in the chat too**, in one fenced block, as the
+  last thing in the session (`CLAUDE.md` → Session workflow).
+- Update the `device-and-tooling` memory note: new Metro PID, whether both `:5555` pins
+  survived, any new build traps, the screen-timeout restore.
+

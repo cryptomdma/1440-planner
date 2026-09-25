@@ -79,10 +79,20 @@ face → swipe to the last page → **+** → scroll to *Downloaded* → **1440 
 
 ```powershell
 adb -s <watch> shell am broadcast -a com.google.android.wearable.app.DEBUG_SURFACE --es operation set-watchface --es watchFaceId com.planner1440.wff
-adb -s <watch> logcat -s 1440:DataLayer 1440:WatchFace DWF:WearComplicationProvider
+adb -s <watch> logcat -v time | Select-String '1440:DataLayer|1440:WatchFace|WearComplicationProvider'
 ```
+
+Do not filter with `logcat -s 1440:DataLayer`: logcat reads the first colon as the
+tag/priority separator (tag `1440`, priority `D`), so tags with a colon never match.
+Capture unfiltered and grep. The lines to expect per snapshot are
+`1440:DataLayer: Received snapshot, currentMinute=N`, then
+`DWF:WearComplicationProvider: [11:TEXT] "N"` / `[11:TITLE] "MIN ELAPSED"` and
+`[12:TEXT] "<title> <time>"` as the face loads the two slots.
 
 Switching to another face and back re-queries both complications, which is the quickest
 way to see a new snapshot if the phone is not around. Keep the watch on its charger with
-*Stay awake while charging* on, or the Wi-Fi radio parks and the ADB session drops. See
+*Stay awake while charging* on, or the Wi-Fi radio parks and the ADB session drops; off
+the charger, `settings put system screen_off_timeout 1800000` (default `60000`) holds the
+screen and the radio. A **locked** watch (`dumpsys trust` → `deviceLocked=1`, lock icon on
+the face) renders both slots as `--` — the data is there, unlock it to see the values. See
 `docs/STATUS.md` for the current state of the sync.

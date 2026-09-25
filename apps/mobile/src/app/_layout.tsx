@@ -7,7 +7,7 @@ import * as Notifications from 'expo-notifications';
 import {
   DESIGN_TOKENS as C,
   useCalendarStore, useSettingsStore, useTodoStore,
-  useCurrentMinute, today,
+  useCurrentMinute, getCurrentMinute, today,
 } from '@1440/core';
 import type { CalendarEvent } from '@1440/core';
 import { initAllStores } from '../services/storage';
@@ -17,8 +17,13 @@ import {
 } from '../services/notifications';
 
 // Coalesces the burst of store updates a drag/resize gesture emits into one
-// native cancel-all + reschedule.
-const RESCHEDULE_DEBOUNCE_MS = 500;
+// native cancel-all + reschedule (notifications) or one Data Layer write (watch).
+const STORE_DEBOUNCE_MS = 500;
+
+// The watch takes the minute from its own clock, but currentBlock/nextBlock are
+// computed on the phone; resending once a minute keeps them from going stale
+// between edits.
+const WATCH_RESYNC_MS = 60_000;
 
 const eventsOn = (events: CalendarEvent[], date: string) => events.filter(e => e.date === date);
 
@@ -39,7 +44,8 @@ const TABS = [
 export default function RootLayout() {
   const pathname    = usePathname();
   const router      = useRouter();
-  const currentMinute = useCurrentMinute();
+  // Ticks every 30 s; the re-render is what lets `todayStr` below flip at midnight.
+  useCurrentMinute();
 
   // Hydration gate: wait for stores to rehydrate from AsyncStorage
   const [hydrated, setHydrated] = useState(false);
@@ -63,26 +69,77 @@ export default function RootLayout() {
     waitForHydration();
   }, []);
 
-  // Watch sync subscription
+  // Watch sync: a snapshot after hydration, on every calendar change, on the
+  // settings the snapshot carries, once a minute while foregrounded, and on
+  // foreground. Reads the stores directly instead of the render closure so
+  // nothing here is torn down as currentMinute ticks. Every trigger goes
+  // through one trailing debounce, so a drag's burst of store updates — or the
+  // AppState events Android emits right after launch — is a single Data Layer
+  // write. The DataItem's `ts` key keeps identical re-sends flowing
+  // (WearableDataLayerModule.kt).
   useEffect(() => {
-    const unsub = useCalendarStore.subscribe(state => {
-      const settings = useSettingsStore.getState();
-      const snapshot = buildWatchSnapshot({
-        events:        state.events,
-        date:          settings.selectedDate,
-        currentMinute,
-        countMode:     settings.countMode,
-        wakeMinute:    settings.wakeMinute,
-        sleepMinute:   settings.sleepMinute,
-      });
-      syncToWatch(snapshot);
+    if (!hydrated) return;
+
+    let debounce: ReturnType<typeof setTimeout> | null = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
+
+    const send = () => {
+      debounce = null;
+      const { events } = useCalendarStore.getState();
+      const { countMode, wakeMinute, sleepMinute } = useSettingsStore.getState();
+      syncToWatch(buildWatchSnapshot({
+        events,
+        // The watch shows today, whichever day the phone is browsing.
+        date:          today(),
+        currentMinute: getCurrentMinute(),
+        countMode,
+        wakeMinute,
+        sleepMinute,
+      }));
+    };
+    const sendSoon = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(send, STORE_DEBOUNCE_MS);
+    };
+    const startTimer = () => {
+      if (interval) clearInterval(interval);
+      interval = setInterval(sendSoon, WATCH_RESYNC_MS);
+    };
+    const stopTimer = () => {
+      if (interval) clearInterval(interval);
+      interval = null;
+    };
+
+    sendSoon();
+    startTimer();
+
+    const unsubCalendar = useCalendarStore.subscribe(sendSoon);
+    const unsubSettings = useSettingsStore.subscribe((state, prev) => {
+      if (state.countMode   !== prev.countMode
+       || state.wakeMinute  !== prev.wakeMinute
+       || state.sleepMinute !== prev.sleepMinute) sendSoon();
     });
-    return unsub;
-  }, [currentMinute]);
+
+    // Backgrounded: JS timers are unreliable there and the watch keeps the last
+    // snapshot. Foregrounded: catch up and resume the cadence. (A cold start
+    // emits `background` then `active` ~100 ms after mount; the debounce folds
+    // that into the hydration send.)
+    const appState = AppState.addEventListener('change', status => {
+      if (status === 'active') { sendSoon(); startTimer(); } else { stopTimer(); }
+    });
+
+    return () => {
+      unsubCalendar();
+      unsubSettings();
+      appState.remove();
+      stopTimer();
+      if (debounce) clearTimeout(debounce);
+    };
+  }, [hydrated]);
 
   // Local notifications: ask once after hydration, then keep *today's*
-  // reminders in sync. Deliberately keyed on `hydrated` only — see the
-  // watch-sync effect above for why `currentMinute` must not be a dep here.
+  // reminders in sync. Deliberately keyed on `hydrated` only — a `currentMinute`
+  // dep would tear down and rebuild the subscriptions every 30 s.
   const rescheduleRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -102,7 +159,7 @@ export default function RootLayout() {
     };
     const reschedule = () => {
       if (timer) clearTimeout(timer);
-      timer = setTimeout(flush, RESCHEDULE_DEBOUNCE_MS);
+      timer = setTimeout(flush, STORE_DEBOUNCE_MS);
     };
     rescheduleRef.current = reschedule;
 
