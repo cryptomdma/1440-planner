@@ -13,10 +13,12 @@ linked block. **Android watch sync is verified on hardware as of pass 6:** the
 `WearableDataLayer` Expo local module on the phone writes a `WatchSnapshot` to the Wearable
 Data Layer on every calendar/settings change, once a minute while the app is open, and on
 foreground; `watch/android-wearos`'s `DataLayerClient` on the owner's Galaxy Watch 7
-receives each one 3.5–4 s later and refreshes the two complications its Watch Face Format
-face shows. Backend, web prototype and iOS are still scaffolding. Eighteen PRs have
-merged, pass 6 among them (#18, `a87dc52`); `fix/watch-arc-rotation` (PR #19) is open.
-The owner's feature backlog is staged as passes 7–12 under **Next up**.
+receives each one and refreshes the two complications its Watch Face Format face shows.
+**Pass 7 moved the app from Expo SDK 51 to SDK 57** (React 19, RN 0.86, New Architecture
+on), deleting every dependency-rot workaround. Backend, web prototype and iOS are still
+scaffolding. Eighteen PRs have merged, pass 6 among them (#18, `a87dc52`); two branches are
+open and unmerged: `fix/watch-arc-rotation` (PR #19) and `chore/sdk-upgrade` (PR #20, pass 7,
+**stacked on #19**). The owner's feature backlog is staged as passes 7–12 under **Next up**.
 
 ---
 
@@ -28,7 +30,8 @@ The owner's feature backlog is staged as passes 7–12 under **Next up**.
 - Three zustand stores persisted via an injectable `StateStorage` adapter
   (keys `1440-planner-{calendar,todos,settings}-v1`)
 
-**`apps/mobile`** — Expo SDK 51, expo-router, four tabs
+**`apps/mobile`** — Expo SDK 57 (React 19.2.3, RN 0.86.3, expo-router 57, New Architecture
+on), four tabs
 - **Day** — 1440-minute grid, now-line, long-press-to-create, long-press-drag to move,
   top/bottom resize knobs (15-min snap + haptics), date strip with month grid, swipe
   between days, delete with 4s undo, next-block countdown, day progress stats
@@ -80,21 +83,12 @@ The owner's feature backlog is staged as passes 7–12 under **Next up**.
 
 ## 🐛 Known debt
 
-**Dependency rot (highest risk).** Root `node_modules` holds **SDK 55** copies of
-`expo-constants` (55.0.16), `expo-linking` (55.0.15), `react-native-screens` (4.24.0) and
-`react-native-safe-area-context` (5.7.0) beside this **SDK 51** app, pulled in by
-`expo-router@3.5.24` and hoisted by npm. `apps/mobile/metro.config.js` + root
-`overrides` compensate. It works, but it is fragile and `package-lock.json` reproduces it
-on a fresh install. **See `CLAUDE.md` before touching `metro.config.js`.** The real fix is
-an SDK upgrade — a deliberate, self-contained future pass.
-
-**`app.json` edits silently fail to reach the JS side.** The embedded `app.config` asset
-(`Constants.expoConfig`, which expo-router and expo-linking read the scheme from) is written
-by the Gradle task `:expo-constants:createExpoConfig`, which declares outputs but no inputs
-and is therefore `UP-TO-DATE` forever after its first run. The first pass-3 rebuild updated
-the manifest but not the JS for exactly this reason. Workaround and the check to make are in
-`CLAUDE.md` ("`app.json` changes do NOT reach `Constants.expoConfig`"). Goes away with the
-SDK upgrade (newer expo-constants marks the task always out-of-date).
+**A native build needs several GB of free disk, and says so badly.** Pass 7's first full
+SDK 57 build failed at `:app:mergeDebugNativeLibs` with `There is not enough space on the
+disk` (the machine had 40 MB free of 475 GB). The first build after a dependency change also
+downloads NDK 27.1.12297006 (~2.2 GB) and can fail once with `[CXX1101] NDK … did not have a
+source.properties file` when the check races that download — re-running succeeds. Neither
+message names the real cause. Recorded in `CLAUDE.md` → Dev commands.
 
 **No dynamic `import()` anywhere in `packages/core`.** Metro serves a lazy `import()` as a
 separate "split bundle" and builds its URL from the path relative to `apps/mobile`; for a
@@ -203,8 +197,9 @@ a `packages/core/src/theme.ts` that was deliberately not created (see `DESIGN_TO
   "forever".
 - **No `packages/core/src/theme.ts`.** `DESIGN_TOKENS` stays in `types/event.ts` so the
   palette has exactly one home. Overrides `CLAUDE_CODE_HANDOFF.md:566`.
-- **Expo Go is not a supported path.** SDK 51 predates store Expo Go's supported range.
-  Android dev build only.
+- **Expo Go is still not the path, for a new reason.** The SDK 51 pin that ruled it out is
+  gone (pass 7), but `WearableDataLayer` is a local native module, so Expo Go could never run
+  watch sync. Android dev build only. Expo Go was not tried in pass 7.
 - **`docs/API_SPEC.md` stays empty** until a backend exists.
 
 ---
@@ -217,10 +212,9 @@ outer ring is driven by category time ranges — building the rings first means 
 them twice), and **the repeat rework should land early**, while the only repeating data
 in existence is disposable test data.
 
-7. **SDK upgrade off 51.** Resolves the dependency rot, re-enables Expo Go, and removes
-   the `createExpoConfig` up-to-date trap. Invasive; its own session, nothing else in it.
-   The handoff below is written for it. First because everything after it is easier on a
-   current SDK.
+7. ~~**SDK upgrade off 51.**~~ **Done in pass 7** (PR #20) — SDK 51 → **57**, not the 55 the
+   old handoff guessed at, because 57 is the current SDK. Dependency rot, the
+   `createExpoConfig` trap and all three metro resolver workarounds are gone.
 8. **Repeat, finished.** Rule-based virtual expansion (see Decisions on record), "forever",
    cancel with scope ("this and future" / "all"), and a real date picker in the New Time
    Block date field (it is a bare numeric `TextInput` today,
@@ -255,6 +249,133 @@ Not staged, deliberately:
 ---
 
 ## Session log
+
+### 2026-09-24 — Pass 7: Expo SDK 51 → 57 (PR #20, open, stacked on #19)
+Branch `chore/sdk-upgrade`, **branched from `fix/watch-arc-rotation` (`96db36c`), not
+`main`** — PR #19 was still unmerged, so #20 contains #19's commits and should be merged
+after it. Full native rebuild. Phone `R5CY72XEJKD` over `192.168.1.91:5555` the whole
+session (USB never appeared); watch `192.168.1.68:5555` for step 6 only.
+
+**Target: 57, not 55.** The pass-6 handoff proposed SDK 55 because root `node_modules` held
+SDK 55 copies. That reasoning did not survive contact: those copies were an accident of
+`expo-router@3.5.24`'s loose peer ranges and were deleted either way, and **57.0.25 is the
+current SDK** (`npm view expo dist-tags`). 55 would have shipped an SDK two majors stale.
+
+**Before → after**
+
+| | before | after |
+|---|---|---|
+| `expo` | 51.0.39 | **57.0.25** |
+| `react` / `react-native` | 18.2.0 / 0.74.0 | **19.2.3 / 0.86.3** |
+| `expo-router` | 3.5.24 | **57.0.23** |
+| `expo-constants` / `expo-linking` | 16.0.2 / 6.3.1 (+ **55.x** at root) | **57.0.19 / 57.0.11**, one copy |
+| `react-native-screens` / `-safe-area-context` | 3.31.1 / 4.10.9 (+ **4.24.0 / 5.7.0** at root) | **4.26.2 / 5.7.0**, one copy |
+| `react-native-reanimated` | 3.10.1 | **4.5.1** (+ `react-native-worklets` 0.10.1) |
+| Gradle / NDK / New Arch | 8.8 / 26.1 / off | **9.3.1 / 27.1.12297006 / on** |
+| packages installed | 1224 | **623** (45 → 13 vulns) |
+
+**Deleted, as the brief asked**
+- All three `apps/mobile/metro.config.js` workarounds — `nodeModulesPaths`, `blockList`,
+  `resolveRequest`. The file is now `watchFolders` + `extraNodeModules['@1440/core']`, 19
+  lines, monorepo only.
+- The root `package.json` `overrides` block.
+- `android/settings.gradle`'s `useExpoModules(exclude: ['expo-linking'])` — prebuild
+  regenerates `expoAutolinking.useExpoModules()` with no exclusion and it builds.
+- `babel.config.js`'s explicit `react-native-reanimated/plugin`: SDK 57's
+  `babel-preset-expo` resolves and appends `react-native-worklets/plugin` itself
+  (`babel-preset-expo/build/configs/expo.js:98`), so listing it would apply it twice.
+
+**Four code changes the SDK forced — one of them silent and serious**
+- **`notifications.ts:67` would have broken every reminder.** `DateTriggerInput` now requires
+  `type: SchedulableTriggerInputTypes.DATE`. The old `{ date, channelId }` object **still
+  typechecks** — TS allows `date` as a member of another arm of the `NotificationTriggerInput`
+  union while `{channelId}` satisfies `ChannelAwareTriggerInput` — but at runtime
+  `parseTrigger()` falls through every parser to the channel branch, which delivers
+  **immediately**. `tsc` could not catch this; it was found by reading
+  `expo-notifications/build/scheduleNotificationAsync.js`. Fixed and verified on-device
+  (alarm at 23:45:00.000, not at schedule time).
+- `notifications.ts:10` — `shouldShowAlert` is deprecated; `NotificationBehavior` now requires
+  `shouldShowBanner` + `shouldShowList`.
+- `BlockModal.tsx:367` — RN 0.86 removed `StyleSheet.absoluteFillObject` outright;
+  `absoluteFill` is the same plain frozen object.
+- `DateStrip.tsx:8` — `UIManager.setLayoutAnimationEnabledExperimental(true)` is a no-op that
+  **warns on every launch** under the New Architecture, which was the LogBox toast. Removed.
+
+**Two regressions the new template introduced, both fixed**
+- **Edge-to-edge.** The SDK 57 Android template sets `statusBarColor`/`navigationBarColor`
+  transparent and `AppTheme` to `Theme.AppCompat.DayNight`, so content drew *under* the
+  status bar — the date strip sat behind the system clock (screenshot in the PR).
+  `_layout.tsx` now wraps `<Slot/>` in `<SafeAreaView edges={['top']}>`. Note `day.tsx` was
+  importing `SafeAreaView` from **`react-native`** (a no-op on Android) and never using it;
+  that dead import is gone.
+- **`userInterfaceStyle: "dark"` stopped applying.** Prebuild warned `Install expo-system-ui
+  in your project to enable this feature`; with `DayNight` as the parent theme that would
+  have let native widgets follow the system setting on a dark-only app. Added
+  `expo-system-ui ~57.0.4` and re-ran prebuild.
+
+**`babel-preset-expo` had to be declared explicitly.** npm nested it at
+`node_modules/expo/node_modules/babel-preset-expo` (nothing conflicts — it just did), and
+Babel resolves presets from `babel.config.js`'s directory, so Metro died with
+`Failed to construct transformer: Cannot find module 'babel-preset-expo'`. Adding it to
+`apps/mobile/package.json` (`~57.0.0`, via `expo install`) hoists it to root. `expo-doctor`
+stays clean with it there.
+
+**Verification on-device** (`R5CY72XEJKD`; screenshots and logcat excerpts in the PR)
+0. `adb devices` listed phone and watch. ✅
+1. `npx expo run:android` → `BUILD SUCCESSFUL`, APK 80.2 MB installed 23:28:47.
+   `:expo-constants:createExpoConfig` **executed, not `UP-TO-DATE`** — and the upstream fix is
+   now visible in the script itself (`outputs.upToDateWhen { false }`).
+   `:wearable-data-layer:compileDebugKotlin` ran after its `android/build.gradle` was ported
+   to the SDK 57 template (`plugins { id 'expo-module-gradle-plugin' }`; the old
+   `applyKotlinExpoModulesCorePlugin()` form is gone). ✅
+2. Cold start → Day 3/3 (`am force-stop` + launcher). Cold `planner1440:///settings` →
+   Settings; ✕ → Day, no toast. **No LogBox** after the `DateStrip` fix. ✅
+3. **Data survived**: `firstInstallTime=2026-05-08` (upgrade install, same debug keystore),
+   `OtherDay3` still on 2026-09-24, and every setting from passes 3/6 intact (lead "At
+   start", wake 360 / sleep 1320, COUNT UP, 60m, 15m buffer). `pm clear` was **not** needed;
+   it remains the rollback if hydration ever breaks. ✅
+4. **Notifications**: lead 0, `SdkNotif` at 23:45 → `dumpsys alarm` `origWhen=2026-09-24
+   23:45:00.000 window=0 exactAllowReason=policy_permission`; broadcast 23:44:59.999 →
+   `NotificationManager … notify(… channel=1440-planner` at **23:45:00.124 (124 ms)**, against
+   pass 3's 76 ms bar. Then `am kill` (process gone, `pidof` empty) → tapped the card →
+   cold start → **Day on Sep 24**, the block's date. ✅
+5. **PICK**: Tasks → `+ TASK` `SdkPick` → PICK → placement banner → long-press a free slot →
+   `SdkPick 11:15 PM · 30m` linked block, 15-min snapped, banner gone, grid did not jump.
+   DELETE BLOCK → todo back under **PENDING** with its PICK button. ✅
+6. **Watch sync**: `putDataItem ok … (641 chars)` 23:48:03.612 → watch `Received snapshot,
+   currentMinute=1428` 23:48:04.463 → `[12:TEXT] "SdkWatch 11:55 PM"`, `[11:TEXT] "1428"`.
+   **851 ms**, against pass 6's 3.5–4 s. Quiet window: phone sent 23:48:27 / 23:49:27 /
+   23:50:27, watch received each ~0.7 s later — the 60 s timer is intact. `deviceLocked=0`. ✅
+7. `npx tsc --noEmit` clean on `apps/mobile` and `packages/core`; **`npx expo-doctor` 21/21**. ✅
+8. `metro.config.js` down to `watchFolders` + `extraNodeModules`; root `overrides` gone. ✅
+
+**Found on the way**
+- **`expo prebuild` clears `android/` even without `--clean`** when the template version
+  differs, which it always will after an SDK bump. `CLAUDE.md`'s "never `--clean`" rule is
+  now "back the tree up first, then diff and re-apply". Both hand edits were re-applied;
+  `local.properties` (`sdk.dir=`) is *also* wiped and *not* regenerated, and without it
+  Gradle cannot find the SDK (no `ANDROID_HOME` on this machine).
+- Prebuild emitted `<data android:scheme="planner1440"/>` and `USE_EXACT_ALARM` from
+  `app.json` unaided — pass 3's hand-fix is not needed again.
+- **The machine ran out of disk** (40 MB free of 475 GB) mid-build. Reclaimed ~1.7 GB with
+  `npm cache clean --force` plus the regenerable `node_modules/*/android/build` trees.
+  A wider `%TEMP%` sweep was declined by the sandbox and left alone — **the disk is still
+  tight (~1.5 GB) and the owner should clear it before the next native build.**
+- `expo run:android --device 192.168.1.91:5555` → `Could not find device with name`; the flag
+  wants a different identifier. Disconnecting the watch for the build is simpler.
+- `react-dom@19.3.0` wants `react ^19.3.0` while Expo pins 19.2.3, so `npm ls react` is not
+  clean. Upstream SDK 57 inconsistency, web-only, irrelevant to the Android build, and
+  `expo-doctor` passes.
+
+**Not done / caveats**
+- **New Architecture is ON** (`Running "main" … "fabric":true`) and was left on —
+  `DayGrid`'s long-press `locationY` maths was exercised in step 5 and is correct, so the
+  `newArchEnabled: false` escape hatch was not needed.
+- Expo Go still not tried, and cannot run watch sync regardless (local native module).
+- `syncIOS` still a stub; per-block arcs and background resync untouched.
+- Test blocks left on the phone: the pre-existing `OtherDay3` / `PickTest` / `Test1`, plus
+  this pass's `SdkNotif` (11:45 PM) and `SdkWatch` (11:55 PM), and a pending `SdkPick` todo.
+- Metro for the next session: a detached `cmd /c npx expo start` (node PID 51108) on :8081.
 
 ### 2026-09-24 — Pass 6 follow-up: watch-preview arcs were a quarter-turn out; backlog staged (PR #19)
 Branch `fix/watch-arc-rotation`, from `main` at `a87dc52`. JS-only, no rebuild.
@@ -704,186 +825,186 @@ confirmed afterwards that `npx expo run:android` builds and launches on a physic
 
 ---
 
-## 🤝 Handoff prompt (pass 7)
+## 🤝 Handoff prompt (pass 8)
 
 > Standing rule (`CLAUDE.md` → Session workflow): every session ends by replacing this
 > section with the *next* session's prompt, in this format. Paste the block below as the
 > opening message of the next session.
 
-# 1440 Planner — Pass 7: Expo SDK upgrade off 51 (dependency rot, `createExpoConfig` trap, Expo Go)
+# 1440 Planner — Pass 8: repeat, finished (rule-based virtual expansion)
 
-Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-24. Pass 6
-(PR #18) is merged as `a87dc52`. PR #19 (`fix/watch-arc-rotation`) should also be
-**merged** — check `git log main` for `fix(watchface): arcs were a quarter-turn out`. If
-it is not there, branch from `fix/watch-arc-rotation` instead and say so in the PR.
+Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-24.
 
-**This is one of a staged run of passes** — `docs/STATUS.md` → Next up lists 7 through 12,
-built from the owner's feature notes. **Pass 8 is the repeat rework**, whose design is
-already settled under *Decisions on record*; do not re-open that decision here, and do not
-start it here either. This pass is the SDK upgrade and nothing else.
+**Branching — read carefully, two PRs are open and stacked.** Pass 7 (PR #20,
+`chore/sdk-upgrade`) was itself branched from pass 6-follow-up (PR #19,
+`fix/watch-arc-rotation`) because #19 had not merged. Check `git log main --oneline | head`:
+- Both merged → `git checkout main; git pull; git checkout -b feat/repeat-rules`.
+- #20 not merged → branch from `chore/sdk-upgrade` and **say so in the PR**, as pass 7 did.
+Do not merge anything yourself (`CLAUDE.md` → Git workflow); the repo owner merges.
+
+**The design is already decided — do not re-open it.** `docs/STATUS.md` → *Decisions on
+record* → "Repeating blocks become *rules expanded at read time*". Your job is to implement
+it, not to re-litigate materialised rows vs. a rolling horizon.
 
 The memory note `device-and-tooling` holds the phone serial, adb path, both devices' fixed
-`:5555` ports, the watch wake/screen-timeout recipe, the unfiltered-logcat recipe (tags
-with a colon cannot be `-s`-filtered), the notification and PICK test recipes and how to
-open a PR without `gh`; it is loaded into your context, use it.
+`:5555` ports, the watch wake/screen-timeout recipe, the unfiltered-logcat recipe (tags with
+a colon cannot be `-s`-filtered), the notification/PICK test recipes and how to open a PR
+without `gh`; it is loaded into your context, use it.
 
 ## Prerequisites — check before writing anything
 
-1. **Phone** `R5CY72XEJKD` in `adb devices` (USB, or `adb connect 192.168.1.91:5555`);
-   always pass `-s`. Re-issue `adb -s <phone> reverse tcp:8081 tcp:8081` after every
-   install — without it the dev build shows the red "Unable to load script" screen; it
-   works over the Wi-Fi transport too. **The USB link dropped twice on 2026-09-24 and the
-   Wi-Fi pin carried both sessions**, so if `device 'R5CY72XEJKD' not found` starts
-   appearing, just switch `-s` to the IP rather than stopping. Check
-   `dumpsys window | findstr mCurrentFocus` before any tap sequence: the owner uses the
-   phone during sessions (a notification shade and two other apps stole taps in pass 6).
-2. **Watch** `adb connect 192.168.1.68:5555`. If `offline`, `adb disconnect` + `connect` in
-   a loop with 8 s pauses, then `input keyevent KEYCODE_WAKEUP` and
-   `settings put system screen_off_timeout 1800000` (put `60000` back at the end). The
-   watch is **not** a target of this pass — it is the regression check for the sync.
-3. **Metro.** Pass 6 left a detached `cmd /c npx expo start` (cmd PID 30188) on :8081.
-   This pass rebuilds native code and changes `metro.config.js`, so kill the tree first:
-   `taskkill /PID 30188 /T /F`; verify with `Get-NetTCPConnection -LocalPort 8081 -State
-   Listen`.
-4. **JDK.** `apps/mobile/android/gradle.properties` carries
-   `org.gradle.java.home=C:\\Program Files\\Android\\Android Studio\\jbr` (JDK 17). Newer
-   SDK templates still want 17; keep that line whatever else prebuild regenerates.
-5. Branch: `git checkout main; git pull; git checkout -b chore/sdk-upgrade`.
+1. **Disk.** The machine finished pass 7 with only **~1.5 GB free on C:** and a full native
+   build needs several GB — `mergeDebugNativeLibs` fails with `There is not enough space on
+   the disk`. **Ask the owner to free space before any rebuild.** Pass 8 should be JS-only,
+   so you probably only need Metro, but check `(Get-PSDrive C).Free` early.
+2. **Metro.** Pass 7 left a detached `cmd /c npx expo start` (node PID **51108**) on :8081.
+   Pass 8 is JS-only — **reuse it**; it bundles from disk, so `am force-stop` + relaunch
+   picks up edits to `apps/mobile`, and a `packages/core` edit needs the same. Only
+   `taskkill /PID <pid> /T /F` it if you end up rebuilding. Verify with
+   `Get-NetTCPConnection -LocalPort 8081 -State Listen`.
+3. **Phone** `R5CY72XEJKD`: USB was absent for all of pass 7 — `adb connect
+   192.168.1.91:5555` and always pass `-s`. Re-issue `adb -s <phone> reverse tcp:8081
+   tcp:8081` after any install. Check `dumpsys window | findstr mCurrentFocus` before every
+   tap sequence; the owner uses the phone mid-session.
+4. **Watch** `adb connect 192.168.1.68:5555` — only needed for the step-6 regression.
+   If `offline`, `adb disconnect` + `connect` in a loop with 8 s pauses, then `input keyevent
+   KEYCODE_WAKEUP` and `settings put system screen_off_timeout 1800000` (put `60000` back at
+   the end).
+5. **The app is on Expo SDK 57 now** (React 19.2.3, RN 0.86.3, expo-router 57, New
+   Architecture **on**). `npx expo-doctor` is 21/21 and must stay that way.
 
 ## Goal
 
-Move `apps/mobile` from Expo SDK 51 to the current SDK — root `node_modules` already holds
-SDK 55 packages, so 55 is the natural target; step down to 52 only if 55 fails outright —
-delete the three workarounds that exist purely because of the version mix, and prove the
-app on the phone is unchanged, including watch sync. Closes STATUS "Next up" #7 and two
-Known-debt paragraphs ("Dependency rot", "`app.json` edits silently fail").
+Replace materialised repeat rows with a **rule expanded at read time**, add "forever",
+add cancel-with-scope, and give the New Time Block date field a real date picker. Closes
+STATUS "Next up" #8 and the repeat half of the "Unimplemented settings" Known-debt entry.
 
 ## Findings — do not re-derive
 
-**Where the rot is.** `apps/mobile/package.json:15-28` pins SDK 51: `expo ~51.0.0`,
-`expo-router ~3.5.0`, `react-native 0.74.0`, `react 18.2.0`, `expo-notifications ~0.28.0`,
-`expo-constants ~16.0.0`, `expo-linking ~6.3.1`, `expo-haptics ~13.0.0`,
-`react-native-screens ~3.31.1`, `react-native-safe-area-context ~4.10.1`,
-`react-native-reanimated ~3.10.0`, `react-native-gesture-handler ~2.16.0`,
-`react-native-svg ~15.2.0`, `@react-native-async-storage/async-storage ^1.23.0`. Root
-`package.json:13-19` has an `overrides` block forcing `expo-constants 16.0.2`,
-`expo-linking 6.3.1`, `react-native-screens ~3.31.1`, `react-native-safe-area-context
-~4.10.1`, `react-native-svg ~15.2.0` — and root `node_modules` *still* ends up with SDK 55
-copies of the first four (`CLAUDE.md` → Load-bearing code). That mix is why
-`apps/mobile/metro.config.js` looks the way it does.
+**What exists today.**
+- `packages/core/src/types/repeat.ts:3-9` — `RepeatConfig { mode, interval?, weekdays?,
+  endDate?, count? }`. `endDate` and `count` already exist and are already optional; the
+  "forever" case is simply **both absent**, so the type needs no new field for it.
+- `packages/core/src/utils/schedule.ts:109-124` — `expandRepeat(base, seriesId)` materialises
+  `count` concrete events up front, ids `${base.id}-${i}`, dates `dateAddDays(base.date, i *
+  interval)`. It reads **only** `count` — `endDate` is currently ignored entirely, and
+  `count` defaults to 1, so "weekly forever" silently produces exactly one block today.
+- `apps/mobile/src/components/ui/BlockModal.tsx:109-110` is the only caller:
+  `seriesId = repeat.mode !== 'none' ? \`series-${baseId}\` : undefined`, then
+  `expandRepeat(base, seriesId)` → `addEvents()`.
+- `packages/core/src/types/event.ts:48-49` — `repeat?: RepeatConfig; seriesId?: string`.
+- `packages/core/src/store/useCalendarStore.ts:57-62` — `deleteSeriesFromDate(seriesId,
+  fromDate)` filters out `e.seriesId === seriesId && e.date >= fromDate`. It has existed with
+  **no UI** since before pass 4. Under the new model this becomes "set `endDate`", O(1).
+- `apps/mobile/src/components/ui/RepeatPicker.tsx` edits the `RepeatConfig`;
+  `:48` and `:58` have the coerce-on-keystroke bug (`Math.max(1, parseInt(t) || 1)`) — that
+  is **pass 9's** shared numeric input, don't fix it here unless it blocks you.
 
-**The three workarounds to delete once versions are coherent** — all in
-`apps/mobile/metro.config.js`: `resolver.nodeModulesPaths` (`:12-15`),
-`resolver.blockList` for the root `react-native-screens` / `react-native-safe-area-context`
-(`:20-26`), and the `resolver.resolveRequest` override (`:39-67`) that redirects
-`expo-linking` to the local pure-JS copy and re-resolves HMR's `./node_modules/…` paths.
-**Keep** `watchFolders` (`:7-8`) and `extraNodeModules['@1440/core']` (`:28-31`) — those are
-the monorepo, not the rot. Delete the root `overrides` block in the same commit, `npm
-install` from the root, and confirm one version each with `npm ls expo-constants
-expo-linking react-native-screens react-native-safe-area-context`.
+**The consumer list is the real cost — it is five sites, not four.** *Decisions on record*
+names four; pass 7 found a fifth plus core's own selector. Every one of these filters raw
+`events` by date and must go through the new expansion selector:
+- `apps/mobile/src/app/day.tsx:68` — `events.filter(e => e.date === selectedDate)`
+- `apps/mobile/src/app/_layout.tsx:28` — `eventsOn()`, used by **notifications** (`:157`,
+  `:170`, `:173`) *and* indirectly by watch sync
+- `apps/mobile/src/services/watchSync.ts:34` — `events.filter(e => e.date === date)`
+- `apps/mobile/src/components/tasks/TaskBacklog.tsx:46`
+- **`apps/mobile/src/app/watch.tsx:27`** — the SVG watch-face preview (missed by the decision
+  note)
+- **`packages/core/src/store/useCalendarStore.ts:64`** — `getEventsForDate()`, the natural
+  home for the expansion
 
-**Two hand edits in the gitignored `android/` exist only for the mix** (`CLAUDE.md`):
-`settings.gradle` → `useExpoModules(exclude: ['expo-linking'])` (the SDK 55 `expo-linking`
-did not build with the SDK 51 `expo-module-gradle-plugin`) and `gradle.properties` →
-`org.gradle.java.home`. **This is the one pass where regenerating `android/` is right:**
-`npx expo prebuild --platform android` (still no `--clean`; diff first). Expect the
-`expo-linking` exclusion to become unnecessary — drop it. Re-apply `org.gradle.java.home`.
-Check the regenerated `AndroidManifest.xml` still has `<data android:scheme="planner1440"/>`
-and `android.permission.USE_EXACT_ALARM` — both come from `app.json`, so prebuild should
-emit them; pass 3 had to hand-fix exactly those two when prebuild was skipped.
+`_layout.tsx:32-33`'s `sameEvents()` does a **shallow identity compare** to decide whether
+today's notifications need rescheduling. Virtual occurrences are rebuilt on every call, so
+identity compare will report "changed" every time and reschedule notifications in a loop.
+**Fix that deliberately** — compare by `id` + `startMinute` + `durationMinutes` + `title`, or
+memoise the expansion. This is the single most likely way to ship a battery bug.
 
-**The `createExpoConfig` trap should disappear** with a newer `expo-constants` (upstream
-marks the task always out-of-date). Prove it on the first build: the Gradle log must show
-`> Task :expo-constants:createExpoConfig` **without** `UP-TO-DATE`, and a cold start must
-land on Day — "Unmatched Route" is the symptom of a stale asset. Delete
-`apps/mobile/node_modules/expo-constants/android/build/generated/assets/expo-constants/`
-before the build regardless, as `CLAUDE.md` says.
+**Design points already settled** (from *Decisions on record*):
+- A series is stored **once** as its base event + `RepeatConfig`. Reads expand it for the
+  requested date range.
+- "Forever" = absence of `endDate`/`count`. Expansion must therefore always be **bounded by
+  the requested range**, never by the rule.
+- "Cancel from this date" sets `endDate`; "cancel all" deletes the rule. Both O(1).
+- Editing/deleting one occurrence needs per-series `exceptions: string[]` and
+  `overrides: Record<date, Partial<CalendarEvent>>`.
+- A virtual occurrence needs a stable synthetic id **`${seriesId}:${date}`** for React keys,
+  drag/resize and todo links. Anything that takes an id — `updateEvent`, `deleteEvent`,
+  `linkedTodoId` — must learn to recognise and resolve that shape.
 
-**Code that touches version-sensitive APIs — check each against the installed types
-after the bump, do not assume:**
-- `apps/mobile/src/app/_layout.tsx` — `useRootNavigationState()?.key` gate (expo-router 3
-  → 6), `Notifications.getLastNotificationResponseAsync` /
-  `clearLastNotificationResponseAsync` (expo-notifications 0.28 → current; the clear
-  function has been reshuffled in later versions — if it is gone, guard by response
-  identifier instead), `AppState.addEventListener('change')` subscription (fine),
-  `useCurrentMinute` / `getCurrentMinute` from core (fine).
-- `apps/mobile/src/services/notifications.ts` — the trigger object shape for
-  `scheduleNotificationAsync` changed in later expo-notifications (typed
-  `SchedulableTriggerInputTypes`); `setNotificationChannelAsync` unchanged. Pass 3's 76 ms
-  exact-alarm result is the bar.
-- `apps/mobile/modules/wearable-data-layer/` — `expo-modules-core` `Module` /
-  `ModuleDefinition` / `AsyncFunction` + `Promise` are stable; `requireOptionalNativeModule`
-  from `expo` still exists. `android/build.gradle` applies `expo-module-gradle-plugin`;
-  its template changed after SDK 51 — if configuration fails, compare against a fresh
-  `npx create-expo-module --local` output rather than guessing.
-- `packages/core` — `zustand ^4.5` is fine on React 18.3; if the SDK brings React 19,
-  watch the `create<T>()(persist(...))` typings and `useSyncExternalStore` warnings.
-- `react-native-reanimated` → the SDK's version; `babel.config.js` keeps its plugin last
-  (later SDKs move it to `react-native-worklets` — follow `npx expo install --fix` and
-  `npx expo-doctor`, which say so).
-- **New Architecture** is on by default from SDK 52. All four RN libs here support it. If
-  `DayGrid`'s long-press `Pressable` + `nativeEvent.locationY` maths breaks, set
-  `"newArchEnabled": false` in `app.json` first and note it — do not rewrite `DayGrid` in
-  this pass.
+**Store migration is required.** `useCalendarStore` persists under
+`1440-planner-calendar-v1` (`:67`) with `skipHydration: true` (`:70`) and **no `version` /
+`migrate`**. The device carries real materialised rows from earlier passes. Add
+`version: 2` + `migrate`, collapsing rows that share a `seriesId` back into one base event +
+rule. Non-repeating events (no `seriesId`) must pass through untouched — most of the test
+data is non-repeating. Read `packages/core/src/store/useCalendarStore.ts:1-24` first: the
+storage adapter is injected later via `persist.setOptions()`, so the migration runs at
+`rehydrate()` time, not at module load.
 
-**How to do the bump.** `cd apps/mobile; npx expo install expo@^55 --fix` (or `@^52`)
-rewrites every Expo-managed dependency to the matching version, then `npx expo-doctor`.
-expo-router 6 still exports `Slot`, `usePathname`, `useRouter`, `useLocalSearchParams`,
-`router.setParams` (pass 4 relies on it) and writes `.expo/types/router.d.ts` the same way
-(same typed-routes trap: restart Metro before `tsc` if it shows backslash routes).
+**The date picker.** `BlockModal.tsx:155-162` is a bare `TextInput` with
+`keyboardType="numeric"` and a `YYYY-MM-DD` placeholder — unusable. SDK 57 ships
+`@react-native-community/datetimepicker` support via `npx expo install`; check
+`npx expo-doctor` stays 21/21 after adding it. Note `apps/mobile/src/components/calendar/
+DateStrip.tsx` already has a month-grid picker for the Day screen — **reuse it if it fits**
+rather than adding a dependency.
+
+**Traps that are still live** (`CLAUDE.md`):
+- **No dynamic `import()` in `packages/core`** — Metro serves it as a split bundle whose URL
+  the dev server rejects, and the code after it silently never runs. Static imports only.
+- **Typed-routes trap**: creating files outside `src/app` while Metro runs makes
+  expo-router write backslash "routes" into `.expo/types/router.d.ts` and `tsc` fails there.
+  Restart Metro, then re-run `tsc`.
+- `DESIGN_TOKENS` stays in `packages/core/src/types/event.ts` — no `theme.ts`.
+- Touch targets inside `DayGrid`'s long-press `Pressable` must stay `pointerEvents="none"`.
 
 ## Constraints
 
-- One session, nothing else in it (`STATUS.md` → Next up #7). No feature work.
+- Pass 8 is the repeat rework and the date picker. **No pass-9 work** (the shared numeric
+  input), no categories, no watch rings.
 - Do not touch `watch/android-wearos` — it is the regression check, not a target.
-- `DESIGN_TOKENS` stays in `packages/core/src/types/event.ts`; no `theme.ts`.
-- No dynamic `import()` in `packages/core` (`CLAUDE.md`).
-- `CLAUDE.md` must change in the same PR: its `metro.config.js` section, the two-hand-edits
-  section and the `createExpoConfig` section all describe the pre-upgrade state. Rewrite
-  them to what is still true (probably only `org.gradle.java.home` and the "diff before
-  and after `prebuild`, never `--clean`" rule).
+- JS-only if you can manage it; a native rebuild needs disk the machine may not have.
+- Time is **minutes from midnight**; convert only at the display edge.
 
 ## Verification (required; `<watch>` = `192.168.1.68:5555`)
 
-0. `adb devices` lists `R5CY72XEJKD` and `<watch>`.
-1. `npx expo run:android` (Metro killed first) builds; the Gradle log shows
-   `:expo-constants:createExpoConfig` executed (not `UP-TO-DATE`) and
-   `:wearable-data-layer:compileDebugKotlin`.
-2. Cold start (`am force-stop` + launcher) → Day, 3×. `planner1440:///settings` → Settings;
-   ✕ → Day. No LogBox.
-3. Data survived: the pass-2/3 `OtherDay3` block on 2026-09-24 and the settings are still
-   there (same debug keystore). `pm clear` is the rollback if hydration breaks — say so.
-4. Notifications: lead 0, block 3 min out → posted within ~100 ms of the minute (recipe in
-   the memory note); tap with the process killed (`am kill`, not `force-stop`) → Day on the
-   block's date.
-5. PICK flow: Tasks → `+ TASK` → PICK → long-press a free slot → linked block; delete →
-   todo back to PENDING (pass-4 recipe in the memory note).
-6. Watch sync regression (unfiltered logcat on both, memory note): create a block on today
-   ≥ 30 min out → phone `1440:WatchSync putDataItem ok` → watch `1440:DataLayer Received
-   snapshot` within ~4 s → `DWF:WearComplicationProvider [12:TEXT] "<title> <time>"`; then
-   2 min of no edits → two more `Received snapshot` lines from the timer.
-7. `npx tsc --noEmit -p apps/mobile` and `-p packages/core` clean; `npx expo-doctor` clean.
-8. `metro.config.js` is down to `watchFolders` + `extraNodeModules`; the root `overrides`
-   block is gone; `git diff --stat main` shows both.
+1. `adb devices` lists the phone and `<watch>`.
+2. **Migration**: relaunch against the existing device data — the pass-7 test blocks
+   (`OtherDay3`, `PickTest`, `Test1`, `SdkNotif`, `SdkWatch`) must all still be on
+   2026-09-24, and the pending `SdkPick` todo still pending. Say explicitly whether any
+   materialised series existed to migrate; if none did, **create one on the old build first**
+   or state that the migration path is untested.
+3. **Forever**: a daily rule with no end → scroll a month forward, occurrences all the way;
+   no unbounded loop, no jank. Check memory/CPU are not climbing.
+4. **Cancel with scope**: "this and future" from a mid-series date → earlier occurrences stay,
+   later ones gone, and it survives a force-stop. "All" → the whole series gone.
+5. **One occurrence**: edit a single occurrence (override) and delete a single occurrence
+   (exception); both survive a force-stop and do not affect siblings.
+6. **Nothing regressed**: cold start → Day 3×; notifications still fire at the right minute
+   (lead 0, block 3 min out, `dumpsys alarm` shows `window=0
+   exactAllowReason=policy_permission`, `notify(` within ~100 ms — pass 7 measured 124 ms);
+   PICK flow still places and still returns the todo to PENDING on delete; watch sync still
+   delivers (`putDataItem ok` → `Received snapshot` → `[12:TEXT]`, pass 7 measured 851 ms)
+   **and a repeating block shows correctly as `nextBlock`**.
+7. **The notification loop check**: with a repeating block on today, watch the
+   `[notifications] N reminder(s)` log line for 2 quiet minutes. It must **not** repeat every
+   render. This is the `sameEvents` identity-compare trap above.
+8. `npx tsc --noEmit -p apps/mobile` and `-p packages/core` clean; `npx expo-doctor` 21/21.
 
 ## Wrap-up
 
-- Conventional Commits: `chore(sdk): upgrade to Expo SDK 55`, `chore(sdk): drop the SDK 51
-  resolver workarounds`, `docs: pass-7 …`.
+- Conventional Commits: `feat(repeat): expand repeat rules at read time`,
+  `feat(repeat): cancel with scope`, `feat(repeat): date picker in the block modal`,
+  `docs: pass-8 …`.
 - Push, open the PR through the GitHub API (no `gh`; recipe in the memory note), **do not
-  merge**. PR description: before/after versions, what was deleted, the
-  Gradle/`createExpoConfig` evidence, the verification list with logcat excerpts, anything
-  left (New Architecture off? `syncIOS`, arcs, background resync).
-- `docs/STATUS.md`: TL;DR PR count and open branch; Known debt → remove "Dependency rot"
-  and "`app.json` edits silently fail"; strike item 7 from "Next up" and leave 8–12 as
-  they are; pass-7 log entry; replace this section with **the pass-8 handoff — the repeat
-  rework**, written from *Decisions on record* (rule-based virtual expansion, "forever",
-  cancel with scope, date picker). Carry into it the consumer list that decision names:
-  `day.tsx`, `_layout.tsx` (notifications *and* watch sync), `watchSync.ts`,
-  `TaskBacklog.tsx`, plus synthetic occurrence ids and the store-version migration for
-  existing `seriesId` rows.
-- **Print the pass-8 handoff prompt in full in the chat too**, in one fenced block, as the
+  merge**. Say which branch you stacked on. PR description: the model change, the consumer
+  list you migrated, the store migration and what it did to real device data, the
+  verification list with logcat excerpts, anything left.
+- `docs/STATUS.md`: TL;DR PR count and open branches; Known debt → drop the repeat half of
+  "Unimplemented settings"; strike item 8 from "Next up"; pass-8 log entry; replace this
+  section with **the pass-9 handoff — Tasks**: the shared numeric input that holds the raw
+  string and coerces on blur (`TaskBacklog.tsx:129`, `RepeatPicker.tsx:48,58`), open/edit a
+  task on row press (`TodoRow` has buttons but no row handler), and repeat on tasks (`Todo`
+  has no repeat field at all — and after pass 8 there is a rule model to reuse).
+- **Print the pass-9 handoff prompt in full in the chat too**, in one fenced block, as the
   last thing in the session (`CLAUDE.md` → Session workflow).
 - Update the `device-and-tooling` memory note: new Metro PID, whether both `:5555` pins
-  survived, any new build traps, the screen-timeout restore.
-
+  survived, the disk situation, any new traps.

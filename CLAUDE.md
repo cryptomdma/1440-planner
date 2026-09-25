@@ -70,65 +70,76 @@ Expo entry point. A stray root `app.json` used to exist purely to make that wron
 look valid; it was deleted. If you find one there again, delete it — the real config is
 `apps/mobile/app.json`.
 
-Gradle uses Android Studio's bundled JDK 17 (`org.gradle.java.home` in
-`apps/mobile/android/gradle.properties`). The system `java` on `PATH` does not matter.
+Gradle uses Android Studio's bundled JBR (currently **JDK 21**) via `org.gradle.java.home` in
+`apps/mobile/android/gradle.properties`. The system `java` on `PATH` is JDK 11 and would be
+rejected by Gradle 9.x — that line is what keeps the build working, so keep it pointed at a
+JBR that exists.
 
-**Expo Go does not work** — the app is pinned to SDK 51 and store Expo Go only supports the
-current SDK. Use the dev build.
+The first build after a dependency change **downloads NDK 27.1.12297006 (~2.2 GB)** and can
+fail once with `[CXX1101] NDK … did not have a source.properties file` if the check races the
+download. Re-run; it succeeds. A full native build also needs **several GB of free disk** —
+`mergeDebugNativeLibs` fails with `There is not enough space on the disk` rather than
+anything that names disk as the cause.
+
+**Expo Go:** the SDK 51 pin that ruled it out is gone (the app is on the current SDK since
+pass 7), but Expo Go has **not been tried** and cannot run the app as-is — `WearableDataLayer`
+is a local native module, so watch sync needs the dev build regardless. Keep using
+`npx expo run:android`.
 
 ---
 
 ## Load-bearing code — do not "clean up"
 
-### `apps/mobile/metro.config.js`
+### `apps/mobile/metro.config.js` — now only the monorepo, keep it that way
 
-This file looks like cruft. It is not. Root `node_modules` contains **SDK 55** copies of
-`expo-constants`, `expo-linking`, `react-native-screens` and `react-native-safe-area-context`
-sitting beside this **SDK 51** app, because `expo-router@3.5.24` drags them in and npm
-hoists them. `metro.config.js` compensates with three mechanisms:
+Until the pass-7 SDK upgrade this file carried three resolver workarounds for a version mix
+(SDK 55 packages hoisted beside an SDK 51 app). **They are gone, along with the root
+`package.json` `overrides` block that went with them.** What is left is only monorepo wiring
+and both lines are load-bearing:
 
-- `resolver.nodeModulesPaths` — app-local `node_modules` resolved before root
-- `resolver.blockList` — hard-blocks the root copies of `react-native-screens` and
-  `react-native-safe-area-context`
-- `resolver.resolveRequest` — redirects `expo-linking` to the local 6.3.1 (pure-JS) copy,
-  and re-resolves HMR's `./node_modules/…` paths against the repo root
+- `watchFolders` — `packages/core` lives outside the Metro project root, so without this Fast
+  Refresh never sees edits to core.
+- `resolver.extraNodeModules['@1440/core']` — maps the bare specifier onto that folder.
 
-Removing any of it breaks the build in non-obvious ways. The root `package.json`
-`overrides` block is part of the same workaround.
+Do not add `nodeModulesPaths`, `blockList` or `resolveRequest` back unless a *new* version
+skew is proven; `npx expo-doctor` is the check (it flags duplicate native modules).
 
-The real fix is upgrading off SDK 51, which is a deliberate future pass — see
-`docs/STATUS.md`.
+### `apps/mobile/android/gradle.properties` — one hand edit
 
-### `apps/mobile/android/settings.gradle` and `gradle.properties` — hand-edited
+`android/` is generated and gitignored. Since the SDK upgrade exactly **one** line in it is a
+hand edit that `expo prebuild` does not emit and **silently loses**:
 
-`android/` is generated and gitignored, but two files in it carry hand edits that
-`npx expo prebuild` regenerates and **silently loses**:
-
-- `settings.gradle` — `useExpoModules(exclude: ['expo-linking'])`. The `expo-linking` native
-  module is deliberately excluded to dodge an `expo-module-gradle-plugin` incompatibility.
-  This is why `metro.config.js` must redirect `expo-linking` to a pure-JS version.
 - `gradle.properties` — `org.gradle.java.home=C:\\Program Files\\Android\\Android Studio\\jbr`.
-  Without it Gradle picks the system `java`, which is not JDK 17.
+  Without it Gradle picks the system `java` (JDK 11) and fails.
 
-**Never run `prebuild --clean`.** For manifest-level changes (URL scheme, permissions), edit
-`app.json` *and* hand-edit `android/app/src/main/AndroidManifest.xml` to match, then run
-`npx expo run:android`. If you do run `npx expo prebuild --platform android` (no `--clean`),
-diff and re-apply both edits before building. This is how the pass-3 scheme rename was done
-(2026-09-23).
+`android/local.properties` (`sdk.dir=…`) is also wiped by prebuild and is *not* regenerated;
+restore it too, or Gradle cannot find the Android SDK (no `ANDROID_HOME` is set on this
+machine).
 
-### `app.json` changes do NOT reach `Constants.expoConfig` on their own
+The old `settings.gradle` edit — `useExpoModules(exclude: ['expo-linking'])` — is **obsolete**
+and must not be re-applied: SDK 57's `expo-linking` builds fine, and prebuild now emits
+`expoAutolinking.useExpoModules()` with no exclusions.
+
+**`expo prebuild` now clears `android/` even without `--clean`** (it does so whenever the
+template version differs, which it will after any SDK bump). So: back the tree up first, run
+`npx expo prebuild --platform android`, then diff and re-apply the two files above. Confirm
+the regenerated `AndroidManifest.xml` still has `<data android:scheme="planner1440"/>` and
+`android.permission.USE_EXACT_ALARM` — prebuild emits both from `app.json`, so hand-fixing
+them (as pass 3 had to) should no longer be necessary.
+
+### `app.json` changes reach `Constants.expoConfig` again (fixed upstream in SDK 57)
 
 The JS side reads `scheme`, `plugins`, etc. from an `app.config` asset that the Gradle task
-`:expo-constants:createExpoConfig` writes (expo-constants 16.0.2,
-`node_modules/expo-constants/scripts/get-app-config-android.gradle`). That task declares an
-output dir and **no inputs**, so once it has run Gradle reports it `UP-TO-DATE` forever —
-the asset on the device was five months stale before pass 3, and the first rebuild of the
-scheme rename changed the manifest but not the JS. Before any build that must pick up an
-`app.json` change, delete
-`apps/mobile/node_modules/expo-constants/android/build/generated/assets/expo-constants/`
-and confirm the build log shows `> Task :expo-constants:createExpoConfig` **without**
-`UP-TO-DATE`. (The root `node_modules/expo-constants` is the SDK 55 copy whose script is
-always out-of-date — it is not the one this build uses.)
+`:expo-constants:createExpoConfig` writes. Under expo-constants 16 that task declared an
+output dir and **no inputs**, so Gradle reported it `UP-TO-DATE` forever and `app.json` edits
+silently never reached JS — which is why pass 3's scheme rename changed the manifest but not
+the app, and why the old advice was to delete the generated assets dir by hand.
+
+expo-constants 57 fixes it: `node_modules/expo-constants/scripts/get-app-config-android.gradle`
+now has `outputs.upToDateWhen { false }` plus a `doFirst` that wipes the assets dir, so the
+task re-runs on every build. No manual deletion is needed. If an `app.json` change ever seems
+not to land, the check is still the same — the Gradle log must show
+`> Task :expo-constants:createExpoConfig` **without** `UP-TO-DATE`.
 
 ---
 
