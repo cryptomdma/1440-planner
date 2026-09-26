@@ -141,27 +141,17 @@ foreach ($m in $modes) {
 }
 
 # Wall clock, built from time expressions (see the DigitalClock note at the top).
-# Right-aligned time + left-aligned meridiem so the pair stays centred without measuring
-# text; AM/PM is two stacked labels picked by [AMPM_STATE] (0 = AM, 1 = PM).
-[void]$sb.AppendLine('        <PartText x="97" y="228" width="135" height="30">')
-[void]$sb.AppendLine('            <Text align="RIGHT">')
+# 24-hour by decision (2026-09-25); a 12/24 toggle is scheduled (docs/STATUS.md → Next up).
+# When that lands, note that a phone-side setting cannot reach this element directly — it
+# would need the same slot-gating trick as the count mode, or a WFF UserConfiguration on the
+# watch. For 12-hour: [HOUR_1_12] + [AMPM_STATE] (0 = AM, 1 = PM), both verified to resolve.
+[void]$sb.AppendLine('        <PartText x="125" y="228" width="200" height="30">')
+[void]$sb.AppendLine('            <Text align="CENTER">')
 [void]$sb.AppendLine("                <Font family=`"SYNC_TO_DEVICE`" size=`"22`" color=`"$L2`">")
-[void]$sb.AppendLine('                    <Template>%d:%02d<Parameter expression="[HOUR_1_12]" /><Parameter expression="[MINUTE]" /></Template>')
+[void]$sb.AppendLine('                    <Template>%02d:%02d<Parameter expression="[HOUR_0_23]" /><Parameter expression="[MINUTE]" /></Template>')
 [void]$sb.AppendLine('                </Font>')
 [void]$sb.AppendLine('            </Text>')
 [void]$sb.AppendLine('        </PartText>')
-foreach ($ap in @(
-    @{ label = 'AM'; alpha = '255 * (1 - [AMPM_STATE])' },
-    @{ label = 'PM'; alpha = '255 * [AMPM_STATE]' })) {
-  [void]$sb.AppendLine('        <PartText x="236" y="236" width="60" height="22" alpha="255">')
-  [void]$sb.AppendLine("            <Transform target=`"alpha`" value=`"$($ap.alpha)`" />")
-  [void]$sb.AppendLine('            <Text align="LEFT">')
-  [void]$sb.AppendLine("                <Font family=`"SYNC_TO_DEVICE`" size=`"13`" color=`"$L3`">")
-  [void]$sb.AppendLine("                    <Template>$($ap.label)</Template>")
-  [void]$sb.AppendLine('                </Font>')
-  [void]$sb.AppendLine('            </Text>')
-  [void]$sb.AppendLine('        </PartText>')
-}
 
 # Slot 2: current block if one is running, else the next one. Two lines: title, then the
 # time qualifier ("till 9:45 PM" / "8:00 PM").

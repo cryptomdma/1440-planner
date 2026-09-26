@@ -367,26 +367,10 @@
                 </PartText>
             </Complication>
         </ComplicationSlot>
-        <PartText x="97" y="228" width="135" height="30">
-            <Text align="RIGHT">
+        <PartText x="125" y="228" width="200" height="30">
+            <Text align="CENTER">
                 <Font family="SYNC_TO_DEVICE" size="22" color="#FF94A3B8">
-                    <Template>%d:%02d<Parameter expression="[HOUR_1_12]" /><Parameter expression="[MINUTE]" /></Template>
-                </Font>
-            </Text>
-        </PartText>
-        <PartText x="236" y="236" width="60" height="22" alpha="255">
-            <Transform target="alpha" value="255 * (1 - [AMPM_STATE])" />
-            <Text align="LEFT">
-                <Font family="SYNC_TO_DEVICE" size="13" color="#FF64748B">
-                    <Template>AM</Template>
-                </Font>
-            </Text>
-        </PartText>
-        <PartText x="236" y="236" width="60" height="22" alpha="255">
-            <Transform target="alpha" value="255 * [AMPM_STATE]" />
-            <Text align="LEFT">
-                <Font family="SYNC_TO_DEVICE" size="13" color="#FF64748B">
-                    <Template>PM</Template>
+                    <Template>%02d:%02d<Parameter expression="[HOUR_0_23]" /><Parameter expression="[MINUTE]" /></Template>
                 </Font>
             </Text>
         </PartText>

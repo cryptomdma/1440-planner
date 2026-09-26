@@ -72,7 +72,10 @@ abstract class CountModeComplicationService(
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
         if (request.complicationType != ComplicationType.SHORT_TEXT) return null
-        if (countsDown() != wantDown) return null   // the other half is showing
+        // The other half is showing. This must be an explicit NoData, not null: null means
+        // "no change" to the system, so the slot kept whatever it showed last and, after the
+        // first mode flip, both figures were on screen at once.
+        if (countsDown() != wantDown) return NoDataComplicationData()
         val minute = watchMinuteOfDay()
         // Our own face ignores this number and computes it from the watch clock; it is here
         // so the source still reads correctly in an ordinary slot on another face.
