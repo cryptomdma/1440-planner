@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, Pressable, StyleSheet,
 } from 'react-native';
@@ -8,30 +8,38 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
   CATEGORIES, DESIGN_TOKENS as C, MINUTES_IN_DAY,
   useCalendarStore, useTodoStore, useSettingsStore,
-  useCurrentMinute, expandRepeat, minuteToTimeStr, isToday,
+  useCurrentMinute, minuteToTimeStr, isToday,
   today, dateAddDays,
+  eventsOnDate, datesWithEvents, parseOccurrenceId, findSeries,
 } from '@1440/core';
-import type { CalendarEvent, Todo } from '@1440/core';
+import type { CalendarEvent, SeriesScope } from '@1440/core';
 import DateStrip   from '../components/calendar/DateStrip';
 import DayGrid     from '../components/calendar/DayGrid';
 import BlockModal  from '../components/ui/BlockModal';
 import { placeTodo } from '../services/placeTodo';
-import { nanoid }  from 'nanoid/non-secure';
+
+// The date strip shows today ±365 days, so that is the window repeat rules are
+// expanded over for its dots. A "forever" rule costs at most 731 steps here.
+const STRIP_RANGE_DAYS = 365;
 
 interface UndoEntry {
-  event:        CalendarEvent;
-  linkedTodoId: string | null;
-  timer:        ReturnType<typeof setTimeout>;
+  title:   string;
+  // Reverses whatever the delete did: re-adds a plain block (and re-links its
+  // todo), clears an exception, restores a series' rule, or re-adds its base.
+  restore: () => void;
+  timer:   ReturnType<typeof setTimeout>;
 }
 
 export default function DayScreen() {
   const router         = useRouter();
   const currentMinute  = useCurrentMinute();
 
-  const events     = useCalendarStore(s => s.events);
-  const addEvents  = useCalendarStore(s => s.addEvents);
-  const updateEvent = useCalendarStore(s => s.updateEvent);
-  const deleteEvent = useCalendarStore(s => s.deleteEvent);
+  const events       = useCalendarStore(s => s.events);
+  const addEvents    = useCalendarStore(s => s.addEvents);
+  const updateEvent  = useCalendarStore(s => s.updateEvent);
+  const updateSeries = useCalendarStore(s => s.updateSeries);
+  const deleteWithScope   = useCalendarStore(s => s.deleteWithScope);
+  const restoreOccurrence = useCalendarStore(s => s.restoreOccurrence);
 
   const unlinkTodo = useTodoStore(s => s.unlinkEventFromTodo);
   const todos      = useTodoStore(s => s.todos);
@@ -65,7 +73,8 @@ export default function DayScreen() {
   const [undoEntry,   setUndoEntry]   = useState<UndoEntry | null>(null);
 
   const ac        = countMode === 'down' ? C.cyan : C.amber;
-  const dayEvents = events.filter(e => e.date === selectedDate);
+  // Plain blocks on this date plus that date's virtual repeat occurrences.
+  const dayEvents = useMemo(() => eventsOnDate(events, selectedDate), [events, selectedDate]);
   const todayFlag = isToday(selectedDate);
 
   const totalScheduled = dayEvents.reduce((s, e) => s + e.durationMinutes, 0);
@@ -82,7 +91,10 @@ export default function DayScreen() {
   const minsUntilNext = nextEvent ? nextEvent.startMinute - currentMinute : null;
   const nextCat       = nextEvent ? CATEGORIES.find(c => c.id === nextEvent.categoryId) : null;
 
-  const allDatesWithEvents = [...new Set(events.map(e => e.date))];
+  const allDatesWithEvents = useMemo(() => {
+    const t = today();
+    return datesWithEvents(events, dateAddDays(t, -STRIP_RANGE_DAYS), dateAddDays(t, STRIP_RANGE_DAYS));
+  }, [events]);
 
   const handleLongPress = useCallback((startMinute: number) => {
     if (pickTodo) {
@@ -99,26 +111,49 @@ export default function DayScreen() {
     addEvents(newEvents);
   };
 
-  const handleDeleteEvent = (id: string) => {
-    const ev       = events.find(e => e.id === id);
-    const linkedTd = todos.find(t => t.linkedEventId === id);
+  const handleDeleteEvent = (id: string, scope: SeriesScope) => {
+    const ev = dayEvents.find(e => e.id === id) ?? events.find(e => e.id === id);
     if (!ev) return;
 
-    deleteEvent(id);
+    const occ  = parseOccurrenceId(id);
+    const base = occ ? findSeries(events, occ.seriesId) : undefined;
+    let restore: () => void;
+
+    if (occ && base) {
+      if (scope === 'one') {
+        restore = () => restoreOccurrence(id);
+      } else if (scope === 'future') {
+        // Either the rule got an endDate, or the series vanished entirely
+        // (the occurrence was its first) — check which at undo time.
+        restore = () => {
+          const store = useCalendarStore.getState();
+          if (findSeries(store.events, occ.seriesId)) store.updateSeries(occ.seriesId, { repeat: base.repeat });
+          else store.addEvent(base);
+        };
+      } else {
+        restore = () => useCalendarStore.getState().addEvent(base);
+      }
+    } else {
+      const linkedTodoId = todos.find(t => t.linkedEventId === id)?.id ?? null;
+      restore = () => {
+        addEvents([ev]);
+        if (linkedTodoId) useTodoStore.getState().linkEventToTodo(linkedTodoId, ev.id);
+      };
+    }
+
+    deleteWithScope(id, scope);
     setSelEv(null);
 
     if (undoEntry?.timer) clearTimeout(undoEntry.timer);
     const timer = setTimeout(() => setUndoEntry(null), 4000);
-    setUndoEntry({ event: ev, linkedTodoId: linkedTd?.id ?? null, timer });
+    const title = scope === 'all' ? `${ev.title} (series)` : scope === 'future' ? `${ev.title} (and future)` : ev.title;
+    setUndoEntry({ title, restore, timer });
   };
 
   const handleUndo = () => {
     if (!undoEntry) return;
     clearTimeout(undoEntry.timer);
-    addEvents([undoEntry.event]);
-    if (undoEntry.linkedTodoId) {
-      useTodoStore.getState().linkEventToTodo(undoEntry.linkedTodoId, undoEntry.event.id);
-    }
+    undoEntry.restore();
     setUndoEntry(null);
   };
 
@@ -281,6 +316,7 @@ export default function DayScreen() {
           event={selEv}
           accentColor={ac}
           onUpdate={updateEvent}
+          onUpdateSeries={updateSeries}
           onDelete={handleDeleteEvent}
         />
       )}
@@ -289,7 +325,7 @@ export default function DayScreen() {
       {undoEntry && (
         <View style={s.toast}>
           <Text style={s.toastText} numberOfLines={1}>
-            Deleted "{undoEntry.event.title}"
+            Deleted "{undoEntry.title}"
           </Text>
           <Pressable onPress={handleUndo}>
             <Text style={[s.toastAction, { color: ac }]}>UNDO</Text>

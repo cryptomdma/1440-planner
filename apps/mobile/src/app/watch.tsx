@@ -1,9 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import {
   DESIGN_TOKENS as C, CATEGORIES,
   useCalendarStore, useSettingsStore,
-  useCurrentMinute, minuteToTimeStr, formatDuration,
+  useCurrentMinute, minuteToTimeStr, formatDuration, eventsOnDate,
 } from '@1440/core';
 import type { CalendarEvent } from '@1440/core';
 import WatchCanvas from '../components/watchface/WatchCanvas';
@@ -13,8 +13,9 @@ export default function WatchScreen() {
   const currentMinute = useCurrentMinute();
 
   const events    = useCalendarStore(s => s.events);
-  const updateEvent = useCalendarStore(s => s.updateEvent);
-  const deleteEvent = useCalendarStore(s => s.deleteEvent);
+  const updateEvent  = useCalendarStore(s => s.updateEvent);
+  const updateSeries = useCalendarStore(s => s.updateSeries);
+  const deleteWithScope = useCalendarStore(s => s.deleteWithScope);
 
   const { selectedDate, countMode } = useSettingsStore(s => ({
     selectedDate: s.selectedDate,
@@ -24,7 +25,7 @@ export default function WatchScreen() {
   const [selEv, setSelEv] = useState<CalendarEvent | null>(null);
 
   const ac         = countMode === 'down' ? C.cyan : C.amber;
-  const dayEvents  = events.filter(e => e.date === selectedDate);
+  const dayEvents  = useMemo(() => eventsOnDate(events, selectedDate), [events, selectedDate]);
   const sortedEvs  = [...dayEvents].sort((a, b) => a.startMinute - b.startMinute);
 
   return (
@@ -83,7 +84,8 @@ export default function WatchScreen() {
           event={selEv}
           accentColor={ac}
           onUpdate={updateEvent}
-          onDelete={id => { deleteEvent(id); setSelEv(null); }}
+          onUpdateSeries={updateSeries}
+          onDelete={(id, scope) => { deleteWithScope(id, scope); setSelEv(null); }}
         />
       )}
     </View>

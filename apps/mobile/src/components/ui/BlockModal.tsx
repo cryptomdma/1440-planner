@@ -5,13 +5,14 @@ import {
 } from 'react-native';
 import {
   CATEGORIES, DESIGN_TOKENS as C, BLOCK_SIZE,
-  minuteToTimeStr, formatDateDisplay, formatDuration,
-  today, expandRepeat,
+  minuteToTimeStr, formatDateDisplay,
+  today, isSeries, describeRepeat,
 } from '@1440/core';
-import type { CalendarEvent, CategoryId, RepeatConfig } from '@1440/core';
+import type { CalendarEvent, CategoryId, RepeatConfig, SeriesScope } from '@1440/core';
 import MinuteInput from './MinuteInput';
 import CategoryPicker from './CategoryPicker';
 import RepeatPicker from './RepeatPicker';
+import DateField from './DateField';
 import { nanoid } from 'nanoid/non-secure';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -22,15 +23,20 @@ type AddMode = {
   initialStart?:     number;
   defaultDuration?:  number;
   accentColor?:      string;
+  // One event per call now: a repeating block is a single base event carrying
+  // its rule, expanded at read time (see packages/core/src/utils/repeat.ts).
   onAdd: (events: CalendarEvent[]) => void;
 };
 
 type EditMode = {
   mode:        'edit';
-  event:       CalendarEvent;
+  event:       CalendarEvent;          // a plain block or one virtual occurrence
   accentColor?: string;
+  // Occurrence ids (`<seriesId>:<date>`) turn into per-occurrence overrides.
   onUpdate:    (id: string, patch: Partial<CalendarEvent>) => void;
-  onDelete:    (id: string) => void;
+  // "Whole series" edits go to the base event.
+  onUpdateSeries?: (seriesId: string, patch: Partial<CalendarEvent>) => void;
+  onDelete:    (id: string, scope: SeriesScope) => void;
 };
 
 type Props = (AddMode | EditMode) & {
@@ -38,7 +44,8 @@ type Props = (AddMode | EditMode) & {
   onClose:  () => void;
 };
 
-const BLANK_REPEAT: RepeatConfig = { mode: 'none', count: 4, interval: 7 };
+// A new repeat starts as "forever" — no count, no end date.
+const BLANK_REPEAT: RepeatConfig = { mode: 'none' };
 const QUICK_DURS = [15, 30, 45, 60, 90, 120];
 
 // ── Component ─────────────────────────────────────────────────────────────────
@@ -92,6 +99,8 @@ function AddForm(props: AddMode & { onClose: () => void }) {
 
   const cat = CATEGORIES.find(c => c.id === categoryId);
   const resolvedTitle = (title.trim() || cat?.label) ?? 'Block';
+  const repeating = repeat.mode !== 'none';
+  const repeatText = describeRepeat(repeat);
 
   const handleAdd = () => {
     const baseId = nanoid();
@@ -103,17 +112,20 @@ function AddForm(props: AddMode & { onClose: () => void }) {
       durationMinutes: duration,
       categoryId,
       notes:           notes.trim() || undefined,
-      repeat,
+      repeat:          repeating ? repeat : undefined,
+      seriesId:        repeating ? `series-${baseId}` : undefined,
       fromTodo:        false,
     };
-    const seriesId = repeat.mode !== 'none' ? `series-${baseId}` : undefined;
-    const events   = seriesId ? expandRepeat(base, seriesId) : [base];
-    onAdd(events);
+    onAdd([base]);
     onClose();
   };
 
   return (
-    <ScrollView contentContainerStyle={s.formContent} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={s.formContent}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
       {/* Header */}
       <View style={s.row}>
         <Text style={[s.headerLabel, { color: ac }]}>NEW TIME BLOCK</Text>
@@ -152,14 +164,7 @@ function AddForm(props: AddMode & { onClose: () => void }) {
       <View style={s.grid2}>
         <View style={{ flex: 1 }}>
           <Text style={s.lbl}>DATE</Text>
-          <TextInput
-            style={s.textInput}
-            value={date}
-            onChangeText={setDate}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={C.L3}
-            keyboardType="numeric"
-          />
+          <DateField value={date} onChange={setDate} accentColor={ac} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={s.lbl}>START</Text>
@@ -193,18 +198,20 @@ function AddForm(props: AddMode & { onClose: () => void }) {
       {/* Repeat */}
       <View style={s.repeatSection}>
         <Pressable style={s.row} onPress={() => setShowRepeat(v => !v)}>
-          <Text style={[s.repeatToggle, repeat.mode !== 'none' && { color: ac }]}>
+          <Text style={[s.repeatToggle, repeating && { color: ac }]}>
             {showRepeat ? '▼' : '▶'} REPEAT
-            {repeat.mode !== 'none' && `  · ${repeat.mode} × ${repeat.count}`}
+            {repeating && `  · ${repeatText}`}
           </Text>
         </Pressable>
-        {showRepeat && <RepeatPicker value={repeat} onChange={setRepeat} />}
+        {showRepeat && (
+          <RepeatPicker value={repeat} onChange={setRepeat} startDate={date} accentColor={ac} />
+        )}
       </View>
 
       {/* Submit */}
       <Pressable style={[s.submitBtn, { backgroundColor: ac }]} onPress={handleAdd}>
         <Text style={s.submitText}>
-          SCHEDULE BLOCK{repeat.mode !== 'none' ? ` (${repeat.count}×)` : ''}
+          SCHEDULE BLOCK{repeating ? ` (${repeatText.toUpperCase()})` : ''}
         </Text>
       </Pressable>
     </ScrollView>
@@ -213,9 +220,12 @@ function AddForm(props: AddMode & { onClose: () => void }) {
 
 // ── Edit Form ─────────────────────────────────────────────────────────────────
 
+type EditScope = 'one' | 'all';
+
 function EditForm(props: EditMode & { onClose: () => void }) {
-  const { event, onUpdate, onDelete, onClose, accentColor } = props;
+  const { event, onUpdate, onUpdateSeries, onDelete, onClose, accentColor } = props;
   const ac = accentColor ?? C.amber;
+  const series = isSeries(event) && !!event.seriesId;
 
   const [title,      setTitle]      = useState(() => event?.title ?? '');
   const [start,      setStart]      = useState(() => event?.startMinute ?? 0);
@@ -223,6 +233,8 @@ function EditForm(props: EditMode & { onClose: () => void }) {
   const [categoryId, setCategoryId] = useState(() => event?.categoryId ?? 'deep' as const);
   const [date,       setDate]       = useState(() => event?.date ?? today());
   const [notes,      setNotes]      = useState(() => event?.notes ?? '');
+  // Series only: whether field edits touch this occurrence or the whole series.
+  const [scope,      setScope]      = useState<EditScope>('one');
 
   useEffect(() => {
     if (!event) return;
@@ -232,13 +244,28 @@ function EditForm(props: EditMode & { onClose: () => void }) {
     setCategoryId(event.categoryId);
     setDate(event.date);
     setNotes(event.notes ?? '');
+    setScope('one');
   }, [event?.id]);
 
-  const commit = (patch: Partial<CalendarEvent>) => onUpdate(event.id, patch);
+  // Date is the one field that is always per-occurrence: moving a whole
+  // series' anchor day is not a thing this sheet offers.
+  const commit = (patch: Partial<CalendarEvent>) => {
+    if (series && scope === 'all' && onUpdateSeries && event.seriesId) {
+      onUpdateSeries(event.seriesId, patch);
+    } else {
+      onUpdate(event.id, patch);
+    }
+  };
+  const commitDate = (d: string) => { setDate(d); onUpdate(event.id, { date: d }); };
+
   const cat = CATEGORIES.find(c => c.id === categoryId);
 
   return (
-    <ScrollView contentContainerStyle={s.formContent} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      contentContainerStyle={s.formContent}
+      showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
+    >
       {/* Header */}
       <View style={s.row}>
         <View style={s.row}>
@@ -252,9 +279,31 @@ function EditForm(props: EditMode & { onClose: () => void }) {
 
       {/* Badges */}
       <View style={[s.row, { flexWrap: 'wrap', gap: 4 }]}>
-        {event.fromTodo  && <View style={s.badge}><Text style={[s.badgeText, { color: '#A78BFA' }]}>☑ from tasks</Text></View>}
-        {event.seriesId  && <View style={s.badge}><Text style={[s.badgeText, { color: C.L2 }]}>↺ repeating</Text></View>}
+        {event.fromTodo && <View style={s.badge}><Text style={[s.badgeText, { color: '#A78BFA' }]}>☑ from tasks</Text></View>}
+        {series && (
+          <View style={s.badge}>
+            <Text style={[s.badgeText, { color: C.L2 }]}>↺ {describeRepeat(event.repeat)}</Text>
+          </View>
+        )}
       </View>
+
+      {/* Edit scope (series only) */}
+      {series && (
+        <View>
+          <Text style={s.lbl}>EDITS APPLY TO</Text>
+          <View style={[s.row, { justifyContent: 'flex-start', gap: 6 }]}>
+            {([['one', 'THIS BLOCK'], ['all', 'WHOLE SERIES']] as const).map(([id, label]) => (
+              <Pressable
+                key={id}
+                style={[s.scopeBtn, scope === id && { borderColor: ac, backgroundColor: `${ac}22` }]}
+                onPress={() => setScope(id)}
+              >
+                <Text style={[s.scopeText, scope === id && { color: ac }]}>{label}</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
 
       {/* Title */}
       <View>
@@ -296,15 +345,8 @@ function EditForm(props: EditMode & { onClose: () => void }) {
 
       {/* Date */}
       <View>
-        <Text style={s.lbl}>DATE</Text>
-        <TextInput
-          style={s.textInput}
-          value={date}
-          onChangeText={d => { setDate(d); commit({ date: d }); }}
-          placeholder="YYYY-MM-DD"
-          placeholderTextColor={C.L3}
-          keyboardType="numeric"
-        />
+        <Text style={s.lbl}>{series ? 'DATE (THIS BLOCK)' : 'DATE'}</Text>
+        <DateField value={date} onChange={commitDate} accentColor={ac} />
         {date !== event.date && (
           <Text style={{ fontSize: 9, color: '#34D399', marginTop: 3 }}>
             ↺ Rescheduled to {formatDateDisplay(date)}
@@ -350,13 +392,24 @@ function EditForm(props: EditMode & { onClose: () => void }) {
         ))}
       </View>
 
-      {/* Delete */}
-      <Pressable
-        style={s.deleteBtn}
-        onPress={() => { onDelete(event.id); onClose(); }}
-      >
-        <Text style={s.deleteBtnText}>DELETE BLOCK</Text>
-      </Pressable>
+      {/* Delete — with scope for a series occurrence */}
+      {series ? (
+        <View style={{ gap: 6 }}>
+          <Pressable style={s.deleteBtn} onPress={() => { onDelete(event.id, 'one'); onClose(); }}>
+            <Text style={s.deleteBtnText}>DELETE THIS BLOCK</Text>
+          </Pressable>
+          <Pressable style={s.deleteBtn} onPress={() => { onDelete(event.id, 'future'); onClose(); }}>
+            <Text style={s.deleteBtnText}>DELETE THIS &amp; FUTURE</Text>
+          </Pressable>
+          <Pressable style={s.deleteBtn} onPress={() => { onDelete(event.id, 'all'); onClose(); }}>
+            <Text style={s.deleteBtnText}>DELETE WHOLE SERIES</Text>
+          </Pressable>
+        </View>
+      ) : (
+        <Pressable style={s.deleteBtn} onPress={() => { onDelete(event.id, 'one'); onClose(); }}>
+          <Text style={s.deleteBtnText}>DELETE BLOCK</Text>
+        </Pressable>
+      )}
     </ScrollView>
   );
 }
@@ -390,6 +443,11 @@ const s = StyleSheet.create({
     borderRadius: 3, borderWidth: 1, borderColor: C.border,
   },
   quickBtnText: { fontSize: 9, color: C.L2 },
+  scopeBtn: {
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 4, borderWidth: 1, borderColor: C.border,
+  },
+  scopeText:    { fontSize: 9, color: C.L3, letterSpacing: 1, fontWeight: '700' },
   repeatSection: { borderTopWidth: 1, borderTopColor: C.border, paddingTop: 10, gap: 8 },
   repeatToggle:  { fontSize: 9, color: C.L3, letterSpacing: 1.2, fontWeight: '600' },
   submitBtn: {
