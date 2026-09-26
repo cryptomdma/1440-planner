@@ -1099,8 +1099,10 @@ prompt's Goal and Findings for that item; everything else here still applies.
 
 ## Prerequisites — check before writing anything
 
-1. **Disk.** ~1.7 GB free on C: at the end of pass 8. Pass 9 is JS-only — no rebuild
-   should be needed, so Metro is all you need. Check `(Get-PSDrive C).Free` anyway.
+1. **Disk.** **~1.1 GB free on C:** after pass 8.5's watch builds, and falling. Pass 9 is
+   JS-only so Metro is all you need, but check `(Get-PSDrive C).Free` early and **ask the
+   owner to clear space before any native build** — a phone rebuild needs several GB and
+   fails at `mergeDebugNativeLibs` with a message that never mentions disk.
 2. **Metro.** Pass 8 left the pass-7 `expo start` (node PID **61684**) on :8081 —
    `Get-NetTCPConnection -LocalPort 8081 -State Listen`. Reuse it: it bundles from disk,
    so `am force-stop` + relaunch picks up edits (and Fast Refresh pushes edits into the
