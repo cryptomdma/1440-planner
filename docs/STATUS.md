@@ -19,11 +19,15 @@ on), deleting every dependency-rot workaround. **Pass 8 finished repeat:** a ser
 once as base event + rule and expanded at read time, "forever" exists, delete has scope
 (this / this and future / all), single occurrences can be edited or removed, and the block
 modal has a real date picker; the persisted store migrated to v2 on the phone. Backend, web
-prototype and iOS are still scaffolding. Eighteen PRs have merged, pass 6 among them (#18,
-`a87dc52`); **three branches are open and stacked**: `fix/watch-arc-rotation` (PR #19),
-`chore/sdk-upgrade` (PR #20, pass 7, on #19) and `feat/repeat-rules` (PR #21, pass 8, on
-#20). Merge in that order. The owner's feature backlog is staged as passes 7–12 under
-**Next up**.
+prototype and iOS are still scaffolding. **Pass 8.5 brought the real watch face closer to
+the in-app preview:** the wall clock renders at all now, the big minute figure is computed
+on the watch so it ticks without the phone, it changes colour with the count mode, and the
+face shows the block you are *in* rather than "No blocks". Per-block arcs are still absent
+and now have a concrete plan. Eighteen PRs have merged, pass 6 among them (#18, `a87dc52`);
+**three branches are open and stacked**: `fix/watch-arc-rotation` (PR #19),
+`chore/sdk-upgrade` (PR #20, pass 7, on #19) and `feat/repeat-rules` (PR #21, passes 8 and
+8.5, on #20). Merge in that order. The owner's feature backlog is staged as passes 7–12
+under **Next up**.
 
 ---
 
@@ -91,7 +95,7 @@ on), four tabs
 | Area | State |
 |---|---|
 | **Watch sync transport — iOS** | `syncIOS()` in `apps/mobile/src/services/watchSync.ts` is a `console.log` stub; no WatchConnectivity module and no iOS build path. **Android is done** — see ✅ Working. |
-| **Wear OS watch face** | **Builds, installs, renders and receives live data (passes 5–6).** `watch/android-wearos` = `:app` (`com.planner1440.app`: Data Layer listener + two complication data sources + the androidx Canvas face, which **Wear OS 6 blocks outright**) and `:wff` (`com.planner1440.wff`: the no-code Watch Face Format face that actually shows, fed by those complications). Shows 24 h sweep, minute hand, minute counter and next block — **not per-block arcs** (Known debt). |
+| **Wear OS watch face** | **Builds, installs, renders and receives live data (passes 5–6, reworked in 8.5).** `watch/android-wearos` = `:app` (`com.planner1440.app`: Data Layer listener + four complication data sources + the androidx Canvas face, which **Wear OS 6 blocks outright**) and `:wff` (`com.planner1440.wff`: the no-code Watch Face Format face that actually shows). Draws ring, 96 ticks, 24 h sweep, minute hand, the minute figure and the wall clock **from the watch's own clock**; the phone supplies only the count mode and the current/next block. **Still no per-block arcs** (Known debt, Next up #12a). |
 | **watchOS face** | Real Swift (`WatchFaceView.swift`, `WatchConnectivityManager.swift`, …) but **no `.xcodeproj` / `Package.swift` / `Info.plist`** — cannot compile. |
 | **Backend** | `backend/supabase/` is three **0-byte** files. No `config.toml`, no client dependency. Directory names only. |
 | **`docs/API_SPEC.md`** | Intentionally left empty — there is no backend to spec yet. |
@@ -115,16 +119,41 @@ split bundle`, surfaced as "Possible unhandled promise rejection"). Pass 4 hit t
 `useCalendarStore.deleteEvent` — the todo unlink silently never ran. Use static imports;
 there are no cycles between the stores. Recorded in `CLAUDE.md`.
 
-**The WFF face cannot draw per-block arcs, and its minute counter is a complication.**
-Watch Face Format has no way to render N arbitrary arcs from a JSON snapshot, so the face
-shows the 24-hour sweep, the minute hand, the minute counter (slot 1) and the next block
-(slot 2). Complication `UPDATE_PERIOD_SECONDS=60` never fires on the Galaxy Watch 7 (the
-platform clamps to 300 s); `DataLayerClient` calls `requestUpdateAll()` on every snapshot,
-which is the real refresh path, and since pass 6 the phone resends once a minute while its
-app is foregrounded — so the counter is at most a minute stale while the phone app is open,
-and up to 5 min once it is backgrounded (the timer stops there by design; see Next up).
-Options for arcs: one `RANGED_VALUE` slot per block (bounded count) or a phone-rendered
-bitmap complication. Not started.
+**The WFF face still cannot draw per-block arcs.** Watch Face Format has no loop and no way
+to instantiate N shapes from data, so the face shows the 24-hour sweep, the minute hand, the
+minute figure, the clock and the current/next block — but nothing per block. The data is
+already on the wrist (the snapshot carries every block's start, duration and resolved hex
+colour), so this is purely a rendering gap. The Canvas renderer that *can* draw them is
+blocked by Wear OS 6 on this hardware. **Plan, from the pass-8.5 findings:** render the arcs
+to a bitmap on the *watch* — `DataLayerClient` already holds the JSON and already runs
+complication sources, so it is a `Canvas.drawArc` loop in one more source — and show it
+through a full-face image complication slot. Gated on a spike: whether a `SMALL_IMAGE` /
+`PHOTO_IMAGE` slot covering all 450×450 renders untinted. See Next up #12a.
+
+*Fixed in pass 8.5 (kept for context):* the minute figure used to be a number the phone's
+complication sent, so it was only as fresh as the last complication update —
+`UPDATE_PERIOD_SECONDS=60` never fires here (the platform clamps to ~300 s) and the phone
+only pushes while its app is foregrounded, so with the app closed it could sit five minutes
+behind. The face now computes it from the watch clock.
+
+**Phone data reaches the watch face as display strings and nothing else.** Established on
+the Galaxy Watch 7 in pass 8.5, at Watch Face Format version 1 *and* 2:
+`[COMPLICATION.RANGED_VALUE]` and its `_MIN`/`_MAX` evaluate to `0` whatever the source
+sends, and `[COMPLICATION.TEXT]` substitutes with `%s` but is not coerced by arithmetic
+(`[COMPLICATION.TEXT] * 2` is `0`). So nothing on the face can be computed or branched from
+a value the phone sent. The one observable bit is whether a slot has data at all, because a
+`<Complication>` block does not render when its slot is EMPTY — which is how the count-mode
+switch works (two slots in the same box, gating each other). Complication expressions are
+also scoped to their own slot, so **nothing outside a `<ComplicationSlot>` can be styled
+from phone data**: that is why the ring, ticks and hand stay amber in both count modes while
+the centre figure changes colour. Completing that needs the same full-face slot the arcs
+plan introduces — see Next up #12a.
+
+**`<DigitalClock>` / `<TimeText>` renders nothing on this runtime.** Silently: no parse
+error, no log line, the element is simply absent. Tried `hh:mm`, `h:mm a` and `HH:mm`, with
+and without `hourFormat`. This is why the face had no clock at all from pass 5 until pass
+8.5. Build clock strings from `<PartText>` + `<Template>` over `[HOUR_1_12]` / `[MINUTE]`;
+`[AMPM_STATE]` works too (0 = AM, 1 = PM). Recorded in the watch README.
 
 **Watch resync stops while the phone app is backgrounded.** RN timers are unreliable in
 the background, so `_layout.tsx` clears the 60 s interval on `AppState` → background and
@@ -233,7 +262,9 @@ The owner's feature notes (2026-09-24) are merged into this list and staged as p
 The ordering has two hard constraints: **categories must precede the watch rings** (the
 outer ring is driven by category time ranges — building the rings first means building
 them twice), and **the repeat rework should land early**, while the only repeating data
-in existence is disposable test data.
+in existence is disposable test data. The first constraint is weaker since pass 8.5: it
+assumed hand-authored WFF elements, and the arcs plan in 12a draws on a Canvas instead,
+where adding the category ring later is a few more calls rather than a rebuild.
 
 7. ~~**SDK upgrade off 51.**~~ **Done in pass 7** (PR #20) — SDK 51 → **57**, not the 55 the
    old handoff guessed at, because 57 is the current SDK. Dependency rot, the
@@ -257,7 +288,21 @@ in existence is disposable test data.
     The watch is safe — `buildWatchSnapshot` already resolves colours to hex at send time.
 12. **Watch face rings** — the per-block arcs Known debt, in the owner's two-ring form:
     a thin outer ring for category time ranges, thicker inner rings for actual blocks.
-    Needs 11.
+    The *category* ring needs 11; the block arcs do not — see 12a.
+12a. **Watch block arcs** (new after pass 8.5; can be done any time, does not need 11).
+    Render today's blocks as coloured arcs on the real face. WFF cannot draw them, so:
+    a new complication data source on the *watch* draws the arcs onto a `Bitmap` with
+    `Canvas.drawArc` from the snapshot already in `SharedPreferences`, and the face shows
+    it through an image complication slot covering the full 450×450 behind the hand. No
+    phone changes at all — the snapshot already carries every block's start, duration and
+    hex colour. **Spike first:** confirm a `SMALL_IMAGE` / `PHOTO_IMAGE` slot at full face
+    size renders untinted on the Galaxy Watch 7; that is the one unknown. Pass 8.5 already
+    proved the neighbouring mechanics (a full-size slot with `isCustomizable="FALSE"`
+    binds, and EMPTY slots simply do not render). **This also unblocks the rest of the
+    colour work:** a full-face slot is the only scope from which phone data can style the
+    ring, ticks and hand, so count-mode colour for the whole face comes with it — and it
+    makes 12's category ring a few more draw calls in the same renderer rather than a
+    second build-out, which weakens the "11 must precede 12" ordering below.
 
 Not staged, deliberately:
 - **A 12/24-hour dial toggle.** On a 12-hour dial every block appears twice (the owner's
@@ -272,6 +317,83 @@ Not staged, deliberately:
 ---
 
 ## Session log
+
+### 2026-09-25 — Pass 8.5: watch face parity — the clock, a live figure, count-mode colour (same PR #21)
+Asked for after pass 8, on the same branch `feat/repeat-rules`: the owner noticed the real
+face shows no blocks while the in-app preview does, and asked for count-mode colour,
+accurate block alignment and "most importantly the real time display in the center".
+Watch-side only; the phone app and `packages/core` are untouched.
+
+**Why no blocks: the two renderers are not the same thing.** The in-app Watch tab is React
+Native SVG (`WatchCanvas.tsx`) and loops over events. The face on the wrist is Watch Face
+Format, a static declarative scene with no loop and no way to instantiate N shapes from
+data, and the Canvas renderer that *can* draw arcs is blocked by Wear OS 6 here (pass 5).
+So the arcs were never built, not broken — the generator's own header said so. The snapshot
+pulled off the watch mid-session had all three of the day's blocks with start, duration and
+hex colour, so the data has been on the wrist all along. Plan in Next up #12a.
+
+**Three more defects found by screenshotting the live face**, all now fixed:
+- **The wall clock had never rendered.** `<DigitalClock>`/`<TimeText>` produces nothing on
+  this runtime, silently — no parse error, no log line. Tried `hh:mm`, `h:mm a`, `HH:mm`,
+  with and without `hourFormat`. A `<PartText>` + `<Template>` over `[HOUR_1_12]` /
+  `[MINUTE]` renders fine, and `[AMPM_STATE]` resolves (0 = AM, 1 = PM), so the clock is
+  built that way with AM/PM as two labels picked by alpha.
+- **Slot 2 said "No blocks" while a block was running.** It read only `nextBlock`, ignoring
+  the `currentBlock` the snapshot carries. Now prefers the current block, and the title and
+  time qualifier are separate fields rendered on two lines.
+- **The minute hand struck through the figure** and a centre dot sat on the label. The hand
+  is now drawn before the centre dial, so the dial hides its inner half and it reads as a
+  pointer; the dot is gone and the dial is laid out figure / label / clock.
+
+**The headline figure is computed on the watch now.** It used to be a number the phone's
+complication sent, so it was only as fresh as the last complication update —
+`UPDATE_PERIOD_SECONDS=60` never fires here and the phone only pushes while its app is
+foregrounded, so with the app closed it could sit five minutes behind. The face computes
+`[HOUR_0_23] * 60 + [MINUTE]` itself and ticks every minute unaided.
+
+**Getting the count mode across took four probe builds and is the finding worth keeping.**
+On this runtime **complication data reaches a WFF face as display strings only**:
+`[COMPLICATION.RANGED_VALUE]` and its `_MIN`/`_MAX` evaluate to `0` whatever the source
+sends (checked at format version 1 *and* 2, with the value rendered on-screen to be sure),
+and `[COMPLICATION.TEXT]` substitutes with `%s` but is not coerced by arithmetic —
+`[COMPLICATION.TEXT] * 2` is `0` too. So no number and no branch can come from the phone.
+What *is* observable is whether a slot has data: a `<Complication>` block does not render
+when its slot is EMPTY. Hence `CountUpComplicationService` and
+`CountDownComplicationService`, which return data only in their own mode and `null` in the
+other, on two slots sharing one box — each with its own live expression and its own colour.
+Complication expressions are scoped to their slot, so the ring, ticks and hand cannot be
+styled from phone data and stay amber in both modes; finishing that needs the full-face
+slot that #12a introduces anyway.
+
+**Verification on the Galaxy Watch 7** (screenshots and logcat in the PR)
+1. Face active as `DeclarativeWatchFaceRuntime0`, `deviceLocked=0`. ✅
+2. Clock renders — `9:43 PM`, correct meridiem. It had been absent since pass 5. ✅
+3. Figure live on the watch, count-down: **`137` in cyan** with `MIN LEFT`. ✅
+4. Gating correct: `[11:NO_DATA] NoDataSource` for the count-up slot while
+   `[12:SHORT_TEXT] …CountDownComplicationService` carries data. Exactly one figure on
+   screen. ✅
+5. Slot 2: `[13:TEXT] "NOW Test text is t"` / `[13:TITLE] "till 9:45 PM"` while that block
+   was running — the case that used to read "No blocks". ✅
+6. `gradlew :app:assembleDebug :wff:assembleDebug` clean throughout. ✅
+
+**Not verified — the watch went to sleep before these two.** Its Wi-Fi radio parks when the
+screen is off and eight reconnect attempts over ~5 minutes all timed out, so:
+- **the flip to count-up was never seen on the wrist.** The gate mechanism is proven in the
+  count-down direction (step 4 above shows the up slot correctly empty), and the up path is
+  the same code with the boolean inverted, but it has not been observed. **Check this
+  first next session:** phone Day screen → ▲ → the figure should become amber with
+  `MIN ELAPSED`, and logcat should show `[11]` gaining data and `[12]` going `NO_DATA`.
+- **the figure ticking with the phone app closed** was not timed. Force-stop the phone app,
+  leave the watch a few minutes and confirm the number still advances.
+
+**Also**
+- WFF format version was bumped to 2 and put back to 1: it changed nothing about the
+  numeric expressions, so the extra minSdk was not worth keeping.
+- The runtime renumbers slots in its logs — our `slotId` 1, 3, 2 appear as `[11]`, `[12]`,
+  `[13]` in declaration order.
+- `MinuteCounterComplicationService` is kept, unused by our face, as the plain SHORT_TEXT
+  number for someone else's.
+- Disk is down to ~1.1 GB free after the watch builds.
 
 ### 2026-09-25 — Pass 8: repeat as rules expanded at read time, cancel with scope, date picker (PR #21, open, stacked on #20)
 Branch `feat/repeat-rules`, **branched from `chore/sdk-upgrade` (`039ae4b`), not `main`** —
@@ -957,6 +1079,24 @@ recipe, the store-reading recipe (`exec-out run-as … cat databases/RKStorage` 
 the unfiltered-logcat recipe, tap coordinates and how to open a PR without `gh`. It is
 loaded into your context; use it.
 
+**First, two leftovers from pass 8.5 — about five minutes.** That sub-pass reworked the
+watch face and the watch fell asleep before two checks could be made. Both are watch-side
+and need no code unless they fail:
+1. **Count-mode flip.** On the phone's Day screen tap ▲ (count up). Within a few seconds
+   the watch figure should turn **amber** and read `MIN ELAPSED`; logcat should show `[11]`
+   gaining data and `[12]` going `NO_DATA`. Tap ▼ and it should return to cyan `MIN LEFT`.
+   Only the count-*down* direction was observed live. If the flip does not happen, the
+   suspect is `CountUpComplicationService` / `CountDownComplicationService` in
+   `watch/android-wearos/app/src/main/java/com/planner1440/watchface/ComplicationHelper.kt`
+   and whether `requestUpdateAll()` re-queries a source that previously returned null.
+2. **The figure ticks unaided.** `am force-stop com.planner1440.app` on the *phone*, then
+   check the watch figure a few minutes later. It must still be advancing — that is the
+   whole point of computing it on the watch. Note the result in the PR either way.
+
+**If the owner would rather do the watch than Tasks**, Next up **#12a** (block arcs on the
+real face) is now specified in detail and is the natural follow-on from 8.5. Swap this
+prompt's Goal and Findings for that item; everything else here still applies.
+
 ## Prerequisites — check before writing anything
 
 1. **Disk.** ~1.7 GB free on C: at the end of pass 8. Pass 9 is JS-only — no rebuild
@@ -972,8 +1112,12 @@ loaded into your context; use it.
    tcp:8081 tcp:8081`. Check `dumpsys window | findstr mCurrentFocus` before every tap
    sequence — the owner uses the phone mid-session, and a stale LogBox toast can cover the
    `+ BLOCK` FAB (its ✕ ≈ (1320, 2880)).
-4. **Watch** — not needed for pass 9 (nothing here touches the snapshot). Skip it unless
-   you change `watchSync.ts`.
+4. **Watch** `adb connect 192.168.1.68:5555` — needed only for the two pass-8.5 checks
+   above, then you can drop it. **Its Wi-Fi parks whenever the screen goes off**, and once
+   that happens adb cannot get back in: eight reconnects over five minutes all timed out at
+   the end of 8.5. So the moment it connects, run `input keyevent KEYCODE_WAKEUP` and
+   `settings put system screen_off_timeout 1800000`, do the checks, and put `60000` back.
+   If it is unreachable from the start, it needs a physical tap.
 5. SDK 57, New Architecture on, `npx expo-doctor` 21/21 — keep it that way.
 
 ## Goal
