@@ -304,8 +304,20 @@ where adding the category ring later is a few more calls rather than a rebuild.
     makes 12's category ring a few more draw calls in the same renderer rather than a
     second build-out, which weakens the "11 must precede 12" ordering below.
 
+13. **12/24-hour clock setting** (scheduled 2026-09-25, when the watch face clock went
+    24-hour by decision). One setting, two displays: the phone formats every time through
+    `minuteToTimeStr` (`packages/core/src/utils/time.ts`), which is 12-hour with AM/PM;
+    the watch face clock is `%02d:%02d` over `[HOUR_0_23]` in
+    `watch/android-wearos/tools/make-watchface.ps1`. **The watch half is the catch:** a
+    phone-side setting cannot reach that element — complication data is display-strings
+    only (Known debt) — so it needs either the count-mode trick (two gated clock slots,
+    one 12-hour, one 24-hour, and a third gate service) or a WFF `UserConfiguration` on
+    the watch, which the face's own settings UI would expose but which is a second place
+    to set it. Decide which before coding. `[HOUR_1_12]` and `[AMPM_STATE]` are verified.
+    Small; not blocked on anything.
+
 Not staged, deliberately:
-- **A 12/24-hour dial toggle.** On a 12-hour dial every block appears twice (the owner's
+- **A 12/24-hour dial toggle** (the *dial*, not the clock format — that is #13). On a 12-hour dial every block appears twice (the owner's
   own "possibly double stacked" note), and `WATCH_FACE_ROADMAP.md` closes by calling the
   1440-minute sweep the product's unfair advantage. Worth settling as a product question
   first — a 12-hour *hand* for clock legibility is a different, smaller feature than a
@@ -367,7 +379,8 @@ slot that #12a introduces anyway.
 
 **Verification on the Galaxy Watch 7** (screenshots and logcat in the PR)
 1. Face active as `DeclarativeWatchFaceRuntime0`, `deviceLocked=0`. ✅
-2. Clock renders — `9:43 PM`, correct meridiem. It had been absent since pass 5. ✅
+2. Clock renders — `9:43 PM` at first, `22:41` after the 24-hour decision below. It had
+   been absent since pass 5. ✅
 3. Figure live on the watch, count-down: **`137` in cyan** with `MIN LEFT`. ✅
 4. Gating correct: `[11:NO_DATA] NoDataSource` for the count-up slot while
    `[12:SHORT_TEXT] …CountDownComplicationService` carries data. Exactly one figure on
@@ -376,15 +389,21 @@ slot that #12a introduces anyway.
    was running — the case that used to read "No blocks". ✅
 6. `gradlew :app:assembleDebug :wff:assembleDebug` clean throughout. ✅
 
-**Not verified — the watch went to sleep before these two.** Its Wi-Fi radio parks when the
-screen is off and eight reconnect attempts over ~5 minutes all timed out, so:
-- **the flip to count-up was never seen on the wrist.** The gate mechanism is proven in the
-  count-down direction (step 4 above shows the up slot correctly empty), and the up path is
-  the same code with the boolean inverted, but it has not been observed. **Check this
-  first next session:** phone Day screen → ▲ → the figure should become amber with
-  `MIN ELAPSED`, and logcat should show `[11]` gaining data and `[12]` going `NO_DATA`.
-- **the figure ticking with the phone app closed** was not timed. Force-stop the phone app,
-  leave the watch a few minutes and confirm the number still advances.
+**The bug the owner found an hour later, and the two checks it made possible.** With the
+watch back on its charger the owner saw **both figures on screen at once, whatever the
+phone said**. Cause: the idle gate returned `null`, which the complication system reads as
+"no change", so after the first mode flip the slot kept its last data. It now returns
+`NoDataComplicationData()`, which clears the slot. That reconnection also let the two
+checks the sleeping watch had blocked run:
+7. **Flip, both directions.** Day screen ▲ → `1440:DataLayer: Received snapshot` →
+   `[11:SHORT_TEXT] …CountUp…` + `[12:NO_DATA]`, face **`1358 MIN ELAPSED` in amber**, one
+   figure. ▼ → `[11:NO_DATA]` + `[12:SHORT_TEXT] …CountDown…`, face **`82 MIN LEFT` in
+   cyan**, one figure. Phone left on count-down as found. ✅
+8. **Ticks unaided.** `am force-stop` on the phone (`pidof` empty), watch captured at
+   22:38:46 → `82`, and at 22:41:04 → `79`; in between **zero** `1440:DataLayer` lines and
+   **zero** complication requests. The figure advances from the watch clock alone. ✅
+9. **Clock is 24-hour** by decision: `22:41` where the preview would say 10:41 PM. The
+   AM/PM pair is gone; a 12/24 setting is Next up #13. ✅
 
 **Also**
 - WFF format version was bumped to 2 and put back to 1: it changed nothing about the
@@ -1079,23 +1098,12 @@ recipe, the store-reading recipe (`exec-out run-as … cat databases/RKStorage` 
 the unfiltered-logcat recipe, tap coordinates and how to open a PR without `gh`. It is
 loaded into your context; use it.
 
-**First, two leftovers from pass 8.5 — about five minutes.** That sub-pass reworked the
-watch face and the watch fell asleep before two checks could be made. Both are watch-side
-and need no code unless they fail:
-1. **Count-mode flip.** On the phone's Day screen tap ▲ (count up). Within a few seconds
-   the watch figure should turn **amber** and read `MIN ELAPSED`; logcat should show `[11]`
-   gaining data and `[12]` going `NO_DATA`. Tap ▼ and it should return to cyan `MIN LEFT`.
-   Only the count-*down* direction was observed live. If the flip does not happen, the
-   suspect is `CountUpComplicationService` / `CountDownComplicationService` in
-   `watch/android-wearos/app/src/main/java/com/planner1440/watchface/ComplicationHelper.kt`
-   and whether `requestUpdateAll()` re-queries a source that previously returned null.
-2. **The figure ticks unaided.** `am force-stop com.planner1440.app` on the *phone*, then
-   check the watch figure a few minutes later. It must still be advancing — that is the
-   whole point of computing it on the watch. Note the result in the PR either way.
-
-**If the owner would rather do the watch than Tasks**, Next up **#12a** (block arcs on the
-real face) is now specified in detail and is the natural follow-on from 8.5. Swap this
-prompt's Goal and Findings for that item; everything else here still applies.
+**Pass 8.5 is fully verified — nothing watch-side is owed.** The face now computes its own
+figure and clock, switches colour with the count mode in both directions, and shows the
+block you are in. Two watch items are staged and ready if the owner would rather do them
+than Tasks: **#12a** (block arcs on the real face — the natural follow-on) and **#13** (a
+12/24-hour clock setting). Either swaps in for this prompt's Goal and Findings; the rest
+still applies.
 
 ## Prerequisites — check before writing anything
 
@@ -1114,12 +1122,12 @@ prompt's Goal and Findings for that item; everything else here still applies.
    tcp:8081 tcp:8081`. Check `dumpsys window | findstr mCurrentFocus` before every tap
    sequence — the owner uses the phone mid-session, and a stale LogBox toast can cover the
    `+ BLOCK` FAB (its ✕ ≈ (1320, 2880)).
-4. **Watch** `adb connect 192.168.1.68:5555` — needed only for the two pass-8.5 checks
-   above, then you can drop it. **Its Wi-Fi parks whenever the screen goes off**, and once
-   that happens adb cannot get back in: eight reconnects over five minutes all timed out at
-   the end of 8.5. So the moment it connects, run `input keyevent KEYCODE_WAKEUP` and
-   `settings put system screen_off_timeout 1800000`, do the checks, and put `60000` back.
-   If it is unreachable from the start, it needs a physical tap.
+4. **Watch** — not needed for pass 9 unless you change `watchSync.ts`. If you do go near
+   it: `adb connect 192.168.1.68:5555`, and **its Wi-Fi parks whenever the screen goes
+   off**, after which adb cannot get back in (eight reconnects over five minutes all timed
+   out in 8.5; it came back only once the owner handled it). The moment it connects, run
+   `input keyevent KEYCODE_WAKEUP` and `settings put system screen_off_timeout 1800000`,
+   and put `60000` back at the end.
 5. SDK 57, New Architecture on, `npx expo-doctor` 21/21 — keep it that way.
 
 ## Goal

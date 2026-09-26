@@ -44,7 +44,7 @@ no parse error, the element or value just does not appear:
 
 - **`<DigitalClock>` / `<TimeText>` renders nothing.** Tried `hh:mm`, `h:mm a` and `HH:mm`,
   with and without `hourFormat`. Build clock strings from `<PartText>` + `<Template>` over
-  `[HOUR_1_12]` / `[MINUTE]` instead; those work, as does `[AMPM_STATE]` (0 = AM, 1 = PM).
+  `[HOUR_0_23]` / `[HOUR_1_12]` / `[MINUTE]` instead; those work, as does `[AMPM_STATE]`.
 - **Complication data arrives as display strings only.** `[COMPLICATION.RANGED_VALUE]` and
   its `_MIN` / `_MAX` evaluate to `0` no matter what the source sends, at format version 1
   **and** 2. `[COMPLICATION.TEXT]` substitutes correctly with `%s` but is not coerced by
@@ -53,7 +53,13 @@ no parse error, the element or value just does not appear:
 - **A `<Complication>` block does not render when its slot is EMPTY.** That is the one
   observable bit, and it is how the count-mode switch works: two slots in the same box whose
   data sources gate each other (`CountUp` / `CountDown`), each with its own colour and its
-  own live expression.
+  own live expression. **The idle gate must return `NoDataComplicationData()`, not `null`:**
+  null means "no change" to the system, the slot keeps whatever it showed last, and after
+  the first flip both figures sit on screen at once. (Shipped that way for an evening.)
+- **The clock is 24-hour** (`%02d:%02d` over `[HOUR_0_23]`/`[MINUTE]`). A 12/24 setting is
+  scheduled; if it is a *phone* setting it cannot reach the clock element directly and needs
+  either the same slot-gating trick or a WFF `UserConfiguration` on the watch. For 12-hour,
+  `[HOUR_1_12]` and `[AMPM_STATE]` (0 = AM, 1 = PM) are verified to resolve.
 - **Complication expressions are scoped to their own slot.** Nothing outside a
   `<ComplicationSlot>` can be styled from phone data, which is why the ring, ticks and hand
   stay amber in both count modes while the centre figure changes colour.
