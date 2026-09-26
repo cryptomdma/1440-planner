@@ -67,6 +67,47 @@
                 android:value="60" />
         </service>
 
+        <!--
+          The count-mode gates. Exactly one of these ever returns data, so the WFF face can
+          show one of two live figures without being able to read a number from us (see the
+          comment at the top of ComplicationHelper.kt). UPDATE_PERIOD_SECONDS is 0: they
+          only need re-querying when the mode changes, which arrives as a Data Layer push
+          and triggers requestUpdateAll(). The figure itself ticks in the face.
+        -->
+        <service
+            android:name=".CountUpComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_1440"
+            android:label="1440 count up"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
+
+        <service
+            android:name=".CountDownComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_1440"
+            android:label="1440 count down"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
+
         <service
             android:name=".NextBlockComplicationService"
             android:exported="true"

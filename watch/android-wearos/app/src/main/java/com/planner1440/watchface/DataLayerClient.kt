@@ -33,7 +33,11 @@ class DataLayerClient : WearableListenerService() {
         const val PREFS_KEY                = "snapshot"
         private const val TAG              = "1440:DataLayer"
 
+        // The two count gates matter most here: they carry no clock of their own, so a
+        // change of count mode on the phone only reaches the face through this refresh.
         private val COMPLICATION_SERVICES = listOf(
+            CountUpComplicationService::class.java,
+            CountDownComplicationService::class.java,
             MinuteCounterComplicationService::class.java,
             NextBlockComplicationService::class.java,
         )
