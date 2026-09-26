@@ -4,15 +4,14 @@ import {
   LayoutAnimation, useWindowDimensions,
 } from 'react-native';
 import { DESIGN_TOKENS as C, dateAddDays, formatDateDisplay, today } from '@1440/core';
+import MonthGrid from './MonthGrid';
 
 // `UIManager.setLayoutAnimationEnabledExperimental(true)` used to be required here
 // to opt Android into LayoutAnimation. Under the New Architecture (on since the
 // SDK 57 upgrade) it is a no-op that warns on every launch, and layout animations
 // are enabled by default, so the call is gone.
 
-const DOW    = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
-const MONTHS = ['January','February','March','April','May','June',
-                'July','August','September','October','November','December'];
+const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 
 const RANGE   = 365;
 const TOTAL   = RANGE * 2 + 1; // 731 days, today at MID_IDX
@@ -29,19 +28,6 @@ function buildDays(todayStr: string): { date: string }[] {
   return Array.from({ length: TOTAL }, (_, i) => ({
     date: dateAddDays(todayStr, i - MID_IDX),
   }));
-}
-
-function buildMonthCells(year: number, month: number): (string | null)[] {
-  const firstDow    = new Date(year, month, 1).getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const cells: (string | null)[] = Array(firstDow).fill(null);
-  for (let d = 1; d <= daysInMonth; d++) {
-    cells.push(
-      `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-    );
-  }
-  while (cells.length % 7 !== 0) cells.push(null);
-  return cells;
 }
 
 function idxForDate(todayStr: string, date: string): number {
@@ -62,11 +48,7 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
   const evSet     = useMemo(() => new Set(datesWithEvents), [datesWithEvents]);
   const days      = useMemo(() => buildDays(todayStr), [todayStr]);
 
-  const [expanded,  setExpanded]  = useState(false);
-  const [gridMonth, setGridMonth] = useState(() => {
-    const d = new Date(selectedDate + 'T12:00:00');
-    return { year: d.getFullYear(), month: d.getMonth() };
-  });
+  const [expanded, setExpanded] = useState(false);
 
   // Pixel offset that centers `date` in the viewport
   const offsetForDate = useCallback((date: string) => {
@@ -88,11 +70,7 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
   );
 
   // Keep list centered on the selected date whenever it changes
-  useEffect(() => {
-    scrollTo(selectedDate, true);
-    const d = new Date(selectedDate + 'T12:00:00');
-    setGridMonth({ year: d.getFullYear(), month: d.getMonth() });
-  }, [selectedDate]);
+  useEffect(() => { scrollTo(selectedDate, true); }, [selectedDate]);
 
   // Keep viewportW in sync after orientation changes
   const handleLayout = useCallback((e: any) => {
@@ -104,20 +82,10 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setExpanded(e => !e);
   }, []);
-
-  const prevMonth = useCallback(() =>
-    setGridMonth(({ year, month }) =>
-      month === 0 ? { year: year - 1, month: 11 } : { year, month: month - 1 }
-    ), []);
-  const nextMonth = useCallback(() =>
-    setGridMonth(({ year, month }) =>
-      month === 11 ? { year: year + 1, month: 0 } : { year, month: month + 1 }
-    ), []);
-
-  const monthCells = useMemo(
-    () => buildMonthCells(gridMonth.year, gridMonth.month),
-    [gridMonth.year, gridMonth.month],
-  );
+  const pickFromGrid = useCallback((date: string) => {
+    onSelect(date);
+    toggleExpanded();
+  }, [onSelect, toggleExpanded]);
 
   const isNotToday = selectedDate !== todayStr;
 
@@ -188,52 +156,15 @@ export default function DateStrip({ selectedDate, datesWithEvents, onSelect, acc
         )}
       </View>
 
-      {/* Month grid (expanded) */}
+      {/* Month grid (expanded) — the same picker the block modal uses */}
       {expanded && (
         <View style={s.monthGrid}>
-          <View style={s.monthHeader}>
-            <Pressable onPress={prevMonth} hitSlop={10}>
-              <Text style={s.monthNav}>‹</Text>
-            </Pressable>
-            <Text style={s.monthTitle}>{MONTHS[gridMonth.month]} {gridMonth.year}</Text>
-            <Pressable onPress={nextMonth} hitSlop={10}>
-              <Text style={s.monthNav}>›</Text>
-            </Pressable>
-          </View>
-
-          <View style={s.gridRow}>
-            {DOW.map((d, i) => <Text key={i} style={s.gridDow}>{d}</Text>)}
-          </View>
-
-          {Array.from({ length: monthCells.length / 7 }, (_, row) => (
-            <View key={row} style={s.gridRow}>
-              {monthCells.slice(row * 7, row * 7 + 7).map((date, col) => {
-                if (!date) return <View key={col} style={s.gridCell} />;
-                const active = date === selectedDate;
-                const isT    = date === todayStr;
-                const hasEvs = evSet.has(date);
-                const dt     = new Date(date + 'T12:00:00');
-                return (
-                  <Pressable
-                    key={col}
-                    style={[s.gridCell, active && { backgroundColor: `${accentColor}33`, borderRadius: 4 }]}
-                    onPress={() => { onSelect(date); toggleExpanded(); }}
-                  >
-                    <Text style={[
-                      s.gridNum,
-                      isT    && { color: accentColor },
-                      active && { color: accentColor, fontWeight: '900' },
-                    ]}>
-                      {dt.getDate()}
-                    </Text>
-                    {(hasEvs || isT) && (
-                      <View style={[s.dot, { backgroundColor: active ? accentColor : C.L3 }]} />
-                    )}
-                  </Pressable>
-                );
-              })}
-            </View>
-          ))}
+          <MonthGrid
+            selectedDate={selectedDate}
+            datesWithEvents={evSet}
+            accentColor={accentColor}
+            onSelect={pickFromGrid}
+          />
         </View>
       )}
     </View>
@@ -260,15 +191,5 @@ const s = StyleSheet.create({
   },
   todayTxt:     { fontSize: 8, fontWeight: '700', letterSpacing: 1 },
 
-  monthGrid:    { paddingHorizontal: 6, paddingBottom: 8, borderTopWidth: 1, borderTopColor: C.border },
-  monthHeader: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingVertical: 6, paddingHorizontal: 8,
-  },
-  monthTitle:   { fontSize: 10, color: C.L2, fontWeight: '700', letterSpacing: 0.5 },
-  monthNav:     { fontSize: 18, color: C.L3, paddingHorizontal: 6 },
-  gridRow:      { flexDirection: 'row' },
-  gridDow:      { flex: 1, textAlign: 'center', fontSize: 8, color: C.L3, fontWeight: '600', paddingVertical: 4 },
-  gridCell:     { flex: 1, alignItems: 'center', paddingVertical: 5 },
-  gridNum:      { fontSize: 11, color: C.L2, fontWeight: '600' },
+  monthGrid:    { borderTopWidth: 1, borderTopColor: C.border },
 });
