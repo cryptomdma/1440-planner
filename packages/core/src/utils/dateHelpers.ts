@@ -21,6 +21,14 @@ export function dateAddDays(d: string, n: number): string {
   return toLocalISODate(dt);
 }
 
+// Whole days from `a` to `b` (negative when `b` is earlier). Noon anchors sidestep
+// DST transitions, which would otherwise make a day 23 or 25 hours long.
+export function daysBetween(a: string, b: string): number {
+  const ta = new Date(a + 'T12:00:00').getTime();
+  const tb = new Date(b + 'T12:00:00').getTime();
+  return Math.round((tb - ta) / 86400000);
+}
+
 export function formatDateDisplay(d: string): string {
   const dt  = new Date(d + 'T12:00:00');
   const now = new Date();

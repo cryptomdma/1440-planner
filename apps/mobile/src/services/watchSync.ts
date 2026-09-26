@@ -1,7 +1,6 @@
 import { Platform } from 'react-native';
 import type { CalendarEvent } from '@1440/core';
-import { CATEGORIES } from '@1440/core';
-import { minuteToTimeStr } from '@1440/core';
+import { CATEGORIES, eventsOnDate, minuteToTimeStr } from '@1440/core';
 import WearableDataLayer from '../../modules/wearable-data-layer';
 
 export interface WatchSnapshot {
@@ -31,7 +30,8 @@ export function buildWatchSnapshot(params: {
 }): WatchSnapshot {
   const { events, date, currentMinute, countMode, wakeMinute, sleepMinute } = params;
 
-  const dayEvents = events.filter(e => e.date === date);
+  // Expands repeat rules, so a repeating block shows up as current/next too.
+  const dayEvents = eventsOnDate(events, date);
 
   const currentBlock = dayEvents.find(
     e => e.startMinute <= currentMinute && e.startMinute + e.durationMinutes > currentMinute

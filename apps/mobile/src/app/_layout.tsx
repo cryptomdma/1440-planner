@@ -7,7 +7,7 @@ import * as Notifications from 'expo-notifications';
 import {
   DESIGN_TOKENS as C,
   useCalendarStore, useSettingsStore, useTodoStore,
-  useCurrentMinute, getCurrentMinute, today,
+  useCurrentMinute, getCurrentMinute, today, eventsOnDate,
 } from '@1440/core';
 import type { CalendarEvent } from '@1440/core';
 import { initAllStores } from '../services/storage';
@@ -25,12 +25,14 @@ const STORE_DEBOUNCE_MS = 500;
 // between edits.
 const WATCH_RESYNC_MS = 60_000;
 
-const eventsOn = (events: CalendarEvent[], date: string) => events.filter(e => e.date === date);
-
-// updateEvent() keeps object identity for untouched events, so a shallow
-// compare of the today-subset tells us whether today actually changed.
-const sameEvents = (a: CalendarEvent[], b: CalendarEvent[]) =>
-  a.length === b.length && a.every((e, i) => e === b[i]);
+// Whether today's reminders need rescheduling. Compared by the fields a
+// reminder is built from, NOT by object identity: repeat occurrences are
+// rebuilt on every read (eventsOnDate), so an identity compare would report
+// "changed" on every store update and reschedule notifications in a loop.
+const reminderKey = (e: CalendarEvent) =>
+  `${e.id}|${e.date}|${e.startMinute}|${e.durationMinutes}|${e.title}`;
+const sameReminders = (a: CalendarEvent[], b: CalendarEvent[]) =>
+  a.length === b.length && a.every((e, i) => reminderKey(e) === reminderKey(b[i]));
 
 // Initialize storage adapters synchronously before any store is used
 initAllStores();
@@ -154,7 +156,7 @@ export default function RootLayout() {
       const date = today();
       const { events }          = useCalendarStore.getState();
       const { leadTimeMinutes } = useSettingsStore.getState();
-      scheduleDailyReminder(eventsOn(events, date), date, leadTimeMinutes)
+      scheduleDailyReminder(eventsOnDate(events, date), date, leadTimeMinutes)
         .catch(err => console.warn('[notifications] reschedule failed', err));
     };
     const reschedule = () => {
@@ -167,10 +169,10 @@ export default function RootLayout() {
 
     // Calendar mutations — only when today's events changed. Editing another
     // day (selectedDate is not today) must not touch today's notifications.
-    let prevToday = eventsOn(useCalendarStore.getState().events, today());
+    let prevToday = eventsOnDate(useCalendarStore.getState().events, today());
     const unsubCalendar = useCalendarStore.subscribe(state => {
-      const nextToday = eventsOn(state.events, today());
-      const changed = !sameEvents(prevToday, nextToday);
+      const nextToday = eventsOnDate(state.events, today());
+      const changed = !sameReminders(prevToday, nextToday);
       prevToday = nextToday;
       if (changed) reschedule();
     });

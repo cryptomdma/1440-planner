@@ -9,6 +9,10 @@
         android:icon="@drawable/ic_1440"
         android:label="1440 Planner">
 
+        <!-- v1 is enough. v2 was tried while hunting for a numeric channel from the phone
+             and changed nothing: [COMPLICATION.RANGED_VALUE]/_MIN/_MAX evaluate to 0 at
+             both versions on the Galaxy Watch 7, and [COMPLICATION.TEXT] is a string that
+             arithmetic will not coerce. See ComplicationHelper.kt. -->
         <property
             android:name="com.google.wear.watchface.format.version"
             android:value="1" />

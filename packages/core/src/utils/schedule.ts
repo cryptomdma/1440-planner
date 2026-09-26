@@ -2,7 +2,6 @@ import type { CalendarEvent, EventLayoutSlot } from '../types/event';
 import type { Todo } from '../types/todo';
 import { BLOCK_SIZE, MINUTES_IN_DAY } from '../types/event';
 import { PRIORITIES } from '../types/event';
-import { dateAddDays } from './dateHelpers';
 
 // Returns a map of eventId → { column, totalColumns } for non-overlapping layout.
 // Two-pass column-packing: first assigns columns greedily, then expands totalColumns
@@ -102,23 +101,4 @@ export function autoScheduleQueue(
   }
 
   return placements;
-}
-
-// Expand a base event with a repeat config into N CalendarEvent instances.
-// Returns all occurrences (including the first) with a shared seriesId.
-export function expandRepeat(base: CalendarEvent, seriesId: string): CalendarEvent[] {
-  const repeat = base.repeat;
-  if (!repeat || repeat.mode === 'none') return [{ ...base, seriesId }];
-
-  const interval = repeat.mode === 'daily' ? 1
-    : repeat.mode === 'weekly' ? 7
-    : (repeat.interval ?? 7);
-  const count = Math.max(1, repeat.count ?? 1);
-
-  return Array.from({ length: count }, (_, i) => ({
-    ...base,
-    id: i === 0 ? base.id : `${base.id}-${i}`,
-    date: dateAddDays(base.date, i * interval),
-    seriesId,
-  }));
 }

@@ -6,8 +6,8 @@ import {
 import {
   CATEGORIES, PRIORITIES, DESIGN_TOKENS as C,
   useTodoStore, useCalendarStore, useSettingsStore,
-  autoScheduleQueue, findNextFreeSlot,
-  today, getCurrentMinute,
+  autoScheduleQueue, findNextFreeSlot, eventsOnDate,
+  getCurrentMinute,
 } from '@1440/core';
 import type { Todo, Priority, CategoryId } from '@1440/core';
 import TodoRow from './TodoRow';
@@ -43,7 +43,8 @@ export default function TaskBacklog({ onPick }: Props) {
   const scheduled = todos.filter(t => t.status === 'scheduled');
   const done      = todos.filter(t => t.status === 'done');
 
-  const dayEvents = events.filter(e => e.date === selectedDate);
+  // Includes repeat occurrences, so AUTO never lands a task on top of one.
+  const dayEvents = eventsOnDate(events, selectedDate);
 
   const handleAdd = () => {
     if (!newTitle.trim()) return;
