@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated: 2026-09-24** — read this first; it is the source of truth for project state.
+**Last updated: 2026-09-25** — read this first; it is the source of truth for project state.
 The other docs describe *intent*, and some of it predates what actually shipped.
 
 ---
@@ -15,26 +15,44 @@ Data Layer on every calendar/settings change, once a minute while the app is ope
 foreground; `watch/android-wearos`'s `DataLayerClient` on the owner's Galaxy Watch 7
 receives each one and refreshes the two complications its Watch Face Format face shows.
 **Pass 7 moved the app from Expo SDK 51 to SDK 57** (React 19, RN 0.86, New Architecture
-on), deleting every dependency-rot workaround. Backend, web prototype and iOS are still
-scaffolding. Eighteen PRs have merged, pass 6 among them (#18, `a87dc52`); two branches are
-open and unmerged: `fix/watch-arc-rotation` (PR #19) and `chore/sdk-upgrade` (PR #20, pass 7,
-**stacked on #19**). The owner's feature backlog is staged as passes 7–12 under **Next up**.
+on), deleting every dependency-rot workaround. **Pass 8 finished repeat:** a series is stored
+once as base event + rule and expanded at read time, "forever" exists, delete has scope
+(this / this and future / all), single occurrences can be edited or removed, and the block
+modal has a real date picker; the persisted store migrated to v2 on the phone. Backend, web
+prototype and iOS are still scaffolding. Eighteen PRs have merged, pass 6 among them (#18,
+`a87dc52`); **three branches are open and stacked**: `fix/watch-arc-rotation` (PR #19),
+`chore/sdk-upgrade` (PR #20, pass 7, on #19) and `feat/repeat-rules` (PR #21, pass 8, on
+#20). Merge in that order. The owner's feature backlog is staged as passes 7–12 under
+**Next up**.
 
 ---
 
 ## ✅ Working
 
 **`packages/core` (`@1440/core`)** — platform-agnostic
-- Types: `CalendarEvent`, `Todo`, `RepeatConfig`, `CATEGORIES`, `PRIORITIES`, `DESIGN_TOKENS`
-- Utils: `computeLayout`, `findNextFreeSlot`, `autoScheduleQueue`, `expandRepeat`, time/date helpers
+- Types: `CalendarEvent`, `Todo`, `RepeatConfig` (+ `exceptions`/`overrides`, `SeriesScope`),
+  `CATEGORIES`, `PRIORITIES`, `DESIGN_TOKENS`
+- Utils: `computeLayout`, `findNextFreeSlot`, `autoScheduleQueue`, time/date helpers, and
+  since pass 8 the repeat expansion in `utils/repeat.ts` — `eventsOnDate`, `datesWithEvents`,
+  `expandSeries`, `occurrenceId`/`parseOccurrenceId`, `describeRepeat`,
+  `migrateMaterialisedSeries`
 - Three zustand stores persisted via an injectable `StateStorage` adapter
-  (keys `1440-planner-{calendar,todos,settings}-v1`)
+  (keys `1440-planner-{calendar,todos,settings}-v1`; the calendar store is at **`version: 2`**
+  with a `migrate()` that folds pre-pass-8 materialised repeat rows back into base + rule)
 
 **`apps/mobile`** — Expo SDK 57 (React 19.2.3, RN 0.86.3, expo-router 57, New Architecture
 on), four tabs
 - **Day** — 1440-minute grid, now-line, long-press-to-create, long-press-drag to move,
   top/bottom resize knobs (15-min snap + haptics), date strip with month grid, swipe
   between days, delete with 4s undo, next-block countdown, day progress stats
+- **Repeat (pass 8)** — a series is one stored event + `RepeatConfig`, expanded per read
+  into occurrences with ids `<seriesId>:<date>`. Modes daily / weekly / every-N-days; ENDS
+  Never (forever) / After N / On date. Editing an occurrence writes an override (or, with
+  the WHOLE SERIES chip, the base); deleting one offers THIS BLOCK (exception) / THIS &
+  FUTURE (`endDate`) / WHOLE SERIES, all undoable. Every date read in the app goes through
+  `eventsOnDate()` — the Day grid, the strip dots, notifications, watch sync, the SVG
+  preview and AUTO's conflict set. The block modal's DATE fields are a tappable month grid
+  (`DateField` → `MonthGrid`, shared with the date strip).
 - **Tasks** — backlog with add form, AUTO ("schedule now"), AUTO-SCHEDULE ALL, and
   **PICK** (pass 4): Tasks → PICK pushes `/day?pick=<todoId>`; Day shows a placement
   banner naming the todo; long-press on a free slot creates the linked block there
@@ -149,9 +167,13 @@ tie the "scheduled" look to a category. Pass 4 mapped only the exact match (`#38
 `C.cyan`). Adding a `success`/`green` token is the right fix; not done.
 
 **Unimplemented settings.** `highlightConflicts` has a Settings toggle and store field but
-no rendering behavior in `DayGrid`. Repeat-series edit/delete scope has store support
-(`deleteSeriesFromDate`) but no UI — being replaced wholesale in pass 8, see Decisions on
-record.
+no rendering behavior in `DayGrid`. (The repeat half of this entry — scope with no UI —
+shipped in pass 8.)
+
+**Repeat: still interval-only, and the strip dots stop at ±365 days.** `RepeatConfig.weekdays`
+exists but nothing reads it (no "Mon/Wed/Fri"). `day.tsx` expands rules for the date-strip
+dots over today ±365 only; the month grid can page further and those days show no dot even
+when a forever rule reaches them. Both are small; neither is scheduled.
 
 **Numeric inputs coerce on every keystroke.** `TaskBacklog.tsx:129` is
 `setNewDur(Math.max(5, parseInt(t) || 30))`, so backspacing to empty snaps the field to 30
@@ -178,7 +200,8 @@ a `packages/core/src/theme.ts` that was deliberately not created (see `DESIGN_TO
 ## Decisions on record
 
 - **Repeating blocks become *rules expanded at read time*, not materialised rows**
-  (decided 2026-09-24, before any real repeat data exists — implementation is pass 8).
+  (decided 2026-09-24, before any real repeat data existed — **implemented in pass 8, PR
+  #21**, exactly as below; the consumer list turned out to be six sites, see the pass-8 log).
   Today `expandRepeat()` writes N concrete `CalendarEvent`s up front, which cannot express
   "forever" and makes "cancel from here on" a bulk delete. Instead a series is stored once
   as its base event + `RepeatConfig`, and reads expand it into virtual occurrences for the
@@ -215,10 +238,10 @@ in existence is disposable test data.
 7. ~~**SDK upgrade off 51.**~~ **Done in pass 7** (PR #20) — SDK 51 → **57**, not the 55 the
    old handoff guessed at, because 57 is the current SDK. Dependency rot, the
    `createExpoConfig` trap and all three metro resolver workarounds are gone.
-8. **Repeat, finished.** Rule-based virtual expansion (see Decisions on record), "forever",
-   cancel with scope ("this and future" / "all"), and a real date picker in the New Time
-   Block date field (it is a bare numeric `TextInput` today,
-   `BlockModal.tsx:155-162`). Clears the repeat half of "Unimplemented settings".
+8. ~~**Repeat, finished.**~~ **Done in pass 8** (PR #21) — rule-based virtual expansion,
+   "forever", cancel with scope, single-occurrence edit/delete, store migration to v2, and
+   the month-grid date picker in the block modal. Cleared the repeat half of "Unimplemented
+   settings".
 9. **Tasks.** A shared numeric input that holds the raw string and coerces on blur —
    `TaskBacklog.tsx:129` (`Math.max(5, parseInt(t) || 30)`) makes the duration field
    impossible to clear or to type "30" into, and `RepeatPicker.tsx:48,58` has the same
@@ -249,6 +272,92 @@ Not staged, deliberately:
 ---
 
 ## Session log
+
+### 2026-09-25 — Pass 8: repeat as rules expanded at read time, cancel with scope, date picker (PR #21, open, stacked on #20)
+Branch `feat/repeat-rules`, **branched from `chore/sdk-upgrade` (`039ae4b`), not `main`** —
+neither #19 nor #20 had merged (`main` still `a87dc52`), so #21 carries both and merges
+last. JS-only; Metro from pass 7 reused (node PID 61684, not the 51108 the handoff named).
+Phone `R5CY72XEJKD` had **rebooted**: new IP `192.168.1.97`, `:5555` pin gone, re-pinned
+over its wireless-debugging port. Watch `192.168.1.68:5555` held. Disk 1.67 GB free; no
+rebuild needed.
+
+**The model** (`packages/core/src/utils/repeat.ts`, `store/useCalendarStore.ts`)
+- A series is one stored `CalendarEvent` (base) + `repeat`. Reads expand it: a single date
+  is O(1) per series (`daysBetween(base.date, d) % interval`, then `count`/`endDate`/
+  `exceptions`/`overrides`), a range is O(days / interval). Occurrence id
+  `<seriesId>:<date>`, split on the last colon.
+- `RepeatConfig` gained `exceptions: string[]` and `overrides: Record<ruleDate,
+  RepeatOverride>`; an override may carry `date` (moves one occurrence, keeps its key).
+- `repeatInterval()` derives the step from `mode` — the old modal persisted `interval: 7`
+  next to `mode: 'daily'`, so trusting the stored field would have made migrated daily
+  series weekly.
+- Store: `updateEvent`/`deleteEvent` resolve occurrence ids (override / exception),
+  `updateSeries` (also clears the patched keys from every override), `deleteSeriesFromDate`
+  (`endDate = fromDate − 1`, deletes the base if nothing remains), `deleteSeries`,
+  `restoreOccurrence`, `deleteWithScope`. `expandRepeat()` is gone.
+- **Six consumers** moved to `eventsOnDate()`: `day.tsx` (grid + strip dots via
+  `datesWithEvents()` over today ±365), `_layout.tsx` (notifications), `watchSync.ts`,
+  `TaskBacklog.tsx`, `watch.tsx`, and the store's `getEventsForDate`.
+- **The identity-compare trap was real and is fixed on purpose:** `_layout.tsx` now compares
+  today's reminder set by `id|date|startMinute|durationMinutes|title`, not `e === b[i]`.
+  Measured: one `[notifications]` line in a 2.5-minute quiet window with two repeating
+  blocks on today.
+
+**Migration.** `version: 2` + `migrate()` (runs inside `rehydrate()`). Groups rows by
+`seriesId`, earliest = base, walks the rule to the last surviving row (`count`), missing
+dates → `exceptions`, differing fields → `overrides`, stray dates → standalone events; rows
+without `seriesId` untouched. **The phone had no materialised series** (13 plain events),
+so `MigSeries` (daily × 4) was created on the old build and its 09-27 row deleted first.
+After one cold start: one row, `{"mode":"daily","count":4,"exceptions":["2026-09-27"]}`,
+`"version":2`, the 13 others byte-identical.
+
+**UI.** `MonthGrid` extracted from `DateStrip` and shared; `DateField` (tap → grid) replaces
+both bare `YYYY-MM-DD` inputs in `BlockModal`. `RepeatPicker`: ENDS Never / After N / On
+date (Never default → forever), `startDate` prop seeds "until". Edit sheet on an
+occurrence: rule badge, EDITS APPLY TO chips (THIS BLOCK / WHOLE SERIES; date is always
+per-occurrence), and DELETE THIS BLOCK / THIS & FUTURE / WHOLE SERIES, each undoable
+(the undo entry holds a `restore` closure). `BlockModal.onDelete` is now `(id, scope)`;
+`onUpdateSeries` is new. `CLAUDE.md` → Conventions gained "never filter `events` by date".
+
+**Verification on-device** (excerpts in the PR)
+1. Both devices listed. ✅
+2. Migration as above; `OtherDay3`/`PickTest`/`Test1`/`SdkNotif`/`SdkWatch` still on 09-24.
+   `SdkPick` is **on calendar**, not pending — the owner placed it on 09-25 between
+   passes. ✅
+3. Forever: `"repeat":{"mode":"daily"}`; October fully dotted, Oct 25 shows the occurrence;
+   PSS 593 → 620 MB over the grid open, flat after. ✅
+4. Scope: THIS & FUTURE from Oct 25 → `"endDate":"2026-10-24"` (Oct 1–24 dotted, 25–31 not,
+   survives force-stop); WHOLE SERIES from today → zero rows after force-stop. (The first
+   attempt targeted Sep 28 but the grid-cell tap 1 s after a month change did not register —
+   adb timing, not app logic; 2 s settle fixed it.) ✅
+5. One occurrence: 30m quick button on Sep 26 → `"overrides":{"2026-09-26":{"durationMinutes":30}}`;
+   DELETE THIS BLOCK on Sep 28 → `"exceptions":["2026-09-27","2026-09-28"]`; siblings 60m
+   after force-stop. ✅
+6. Cold start → Day 4/4. Notification, lead 0, block 20:09: `origWhen=2026-09-25
+   20:09:00.000 window=0 exactAllowReason=policy_permission`, broadcast 20:09:00.004 →
+   `notify(` 20:09:00.038 (**34 ms**). PICK: `RepPick` placed 7:15 PM, deleted → PENDING.
+   Watch: `putDataItem ok` 20:06:44.727 → `Received snapshot` 20:06:48.429 → `[12:TEXT]
+   "Forever 8:09 PM"` — **a repeating block as `nextBlock`**, 3.7 s over Bluetooth. ✅
+7. Notification loop: one `[notifications]` line 20:06:44 → 20:09:20; watch resync at
+   :07:07 / :08:07 / :09:07 unchanged. ✅
+8. `tsc` clean on both projects (no typed-routes trap this time, even though three files
+   were created while Metro ran); `expo-doctor` **21/21**. ✅
+
+**Found on the way**
+- The phone's `:5555` pin does not survive its reboot (known) *and* the IP moved (`.91` →
+  `.97`); `adb devices` showed it on a wireless-debugging port. `tcpip 5555` over that link
+  re-pins it — memory note updated.
+- A LogBox "Open debugger to view warnings" toast (from the previous JS session) sat over
+  the `+ BLOCK` FAB and swallowed the first tap.
+- Month-grid cells take `input tap` (the strip's FlatList still does not), but need ~2 s
+  after opening / paging before a tap lands.
+
+**Not done / caveats**
+- `weekdays` still unused; strip dots limited to ±365 days (Known debt).
+- `RepeatPicker`'s interval/count inputs keep the coerce-on-keystroke bug — pass 9.
+- Test data on the phone: `MigSeries` (daily × 4 from 09-25; 26th = 30m; 27/28 excepted),
+  pending `RepPick` todo. `Forever` deleted in step 4.
+- Metro (PID 61684) left running on :8081.
 
 ### 2026-09-24 — Pass 7: Expo SDK 51 → 57 (PR #20, open, stacked on #19)
 Branch `chore/sdk-upgrade`, **branched from `fix/watch-arc-rotation` (`96db36c`), not
@@ -825,186 +934,170 @@ confirmed afterwards that `npx expo run:android` builds and launches on a physic
 
 ---
 
-## 🤝 Handoff prompt (pass 8)
+## 🤝 Handoff prompt (pass 9)
 
 > Standing rule (`CLAUDE.md` → Session workflow): every session ends by replacing this
 > section with the *next* session's prompt, in this format. Paste the block below as the
 > opening message of the next session.
 
-# 1440 Planner — Pass 8: repeat, finished (rule-based virtual expansion)
+# 1440 Planner — Pass 9: Tasks (numeric input, edit-on-press, repeat on tasks)
 
-Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-24.
+Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-25.
 
-**Branching — read carefully, two PRs are open and stacked.** Pass 7 (PR #20,
-`chore/sdk-upgrade`) was itself branched from pass 6-follow-up (PR #19,
-`fix/watch-arc-rotation`) because #19 had not merged. Check `git log main --oneline | head`:
-- Both merged → `git checkout main; git pull; git checkout -b feat/repeat-rules`.
-- #20 not merged → branch from `chore/sdk-upgrade` and **say so in the PR**, as pass 7 did.
+**Branching — three PRs are open and stacked.** #19 `fix/watch-arc-rotation` ← #20
+`chore/sdk-upgrade` (pass 7) ← #21 `feat/repeat-rules` (pass 8). Check
+`git log main --oneline | head`:
+- All three merged → `git checkout main; git pull; git checkout -b feat/tasks-edit`.
+- #21 not merged → branch from `feat/repeat-rules` and **say so in the PR**, as passes 7
+  and 8 did.
 Do not merge anything yourself (`CLAUDE.md` → Git workflow); the repo owner merges.
 
-**The design is already decided — do not re-open it.** `docs/STATUS.md` → *Decisions on
-record* → "Repeating blocks become *rules expanded at read time*". Your job is to implement
-it, not to re-litigate materialised rows vs. a rolling horizon.
-
-The memory note `device-and-tooling` holds the phone serial, adb path, both devices' fixed
-`:5555` ports, the watch wake/screen-timeout recipe, the unfiltered-logcat recipe (tags with
-a colon cannot be `-s`-filtered), the notification/PICK test recipes and how to open a PR
-without `gh`; it is loaded into your context, use it.
+The memory note `device-and-tooling` holds the phone serial, adb path, the `:5555`
+recipe, the store-reading recipe (`exec-out run-as … cat databases/RKStorage` via `cmd`),
+the unfiltered-logcat recipe, tap coordinates and how to open a PR without `gh`. It is
+loaded into your context; use it.
 
 ## Prerequisites — check before writing anything
 
-1. **Disk.** The machine finished pass 7 with only **~1.5 GB free on C:** and a full native
-   build needs several GB — `mergeDebugNativeLibs` fails with `There is not enough space on
-   the disk`. **Ask the owner to free space before any rebuild.** Pass 8 should be JS-only,
-   so you probably only need Metro, but check `(Get-PSDrive C).Free` early.
-2. **Metro.** Pass 7 left a detached `cmd /c npx expo start` (node PID **51108**) on :8081.
-   Pass 8 is JS-only — **reuse it**; it bundles from disk, so `am force-stop` + relaunch
-   picks up edits to `apps/mobile`, and a `packages/core` edit needs the same. Only
-   `taskkill /PID <pid> /T /F` it if you end up rebuilding. Verify with
-   `Get-NetTCPConnection -LocalPort 8081 -State Listen`.
-3. **Phone** `R5CY72XEJKD`: USB was absent for all of pass 7 — `adb connect
-   192.168.1.91:5555` and always pass `-s`. Re-issue `adb -s <phone> reverse tcp:8081
-   tcp:8081` after any install. Check `dumpsys window | findstr mCurrentFocus` before every
-   tap sequence; the owner uses the phone mid-session.
-4. **Watch** `adb connect 192.168.1.68:5555` — only needed for the step-6 regression.
-   If `offline`, `adb disconnect` + `connect` in a loop with 8 s pauses, then `input keyevent
-   KEYCODE_WAKEUP` and `settings put system screen_off_timeout 1800000` (put `60000` back at
-   the end).
-5. **The app is on Expo SDK 57 now** (React 19.2.3, RN 0.86.3, expo-router 57, New
-   Architecture **on**). `npx expo-doctor` is 21/21 and must stay that way.
+1. **Disk.** ~1.7 GB free on C: at the end of pass 8. Pass 9 is JS-only — no rebuild
+   should be needed, so Metro is all you need. Check `(Get-PSDrive C).Free` anyway.
+2. **Metro.** Pass 8 left the pass-7 `expo start` (node PID **61684**) on :8081 —
+   `Get-NetTCPConnection -LocalPort 8081 -State Listen`. Reuse it: it bundles from disk,
+   so `am force-stop` + relaunch picks up edits (and Fast Refresh pushes edits into the
+   running app immediately — **do any "old build" data setup before editing code**).
+3. **Phone** `R5CY72XEJKD`: it rebooted between passes 7 and 8 and came back on
+   **`192.168.1.97`** (was `.91`) with the `:5555` pin lost. Try `adb connect
+   192.168.1.97:5555`, then `.91`; if `adb devices` shows it on some other port, re-pin
+   with `adb -s <ip>:<port> tcpip 5555` over that link. Re-issue `adb -s <phone> reverse
+   tcp:8081 tcp:8081`. Check `dumpsys window | findstr mCurrentFocus` before every tap
+   sequence — the owner uses the phone mid-session, and a stale LogBox toast can cover the
+   `+ BLOCK` FAB (its ✕ ≈ (1320, 2880)).
+4. **Watch** — not needed for pass 9 (nothing here touches the snapshot). Skip it unless
+   you change `watchSync.ts`.
+5. SDK 57, New Architecture on, `npx expo-doctor` 21/21 — keep it that way.
 
 ## Goal
 
-Replace materialised repeat rows with a **rule expanded at read time**, add "forever",
-add cancel-with-scope, and give the New Time Block date field a real date picker. Closes
-STATUS "Next up" #8 and the repeat half of the "Unimplemented settings" Known-debt entry.
+Three Tasks-screen items from STATUS "Next up" #9, in this order:
+1. **A shared numeric input** that holds the raw string and coerces on blur, replacing
+   every coerce-on-keystroke `TextInput`.
+2. **Open/edit a task on row press** — `TodoRow` has buttons but no row handler and there
+   is no edit UI for a todo at all.
+3. **Repeat on tasks** — `Todo` has no repeat field; pass 8 built a rule model to reuse.
 
 ## Findings — do not re-derive
 
-**What exists today.**
-- `packages/core/src/types/repeat.ts:3-9` — `RepeatConfig { mode, interval?, weekdays?,
-  endDate?, count? }`. `endDate` and `count` already exist and are already optional; the
-  "forever" case is simply **both absent**, so the type needs no new field for it.
-- `packages/core/src/utils/schedule.ts:109-124` — `expandRepeat(base, seriesId)` materialises
-  `count` concrete events up front, ids `${base.id}-${i}`, dates `dateAddDays(base.date, i *
-  interval)`. It reads **only** `count` — `endDate` is currently ignored entirely, and
-  `count` defaults to 1, so "weekly forever" silently produces exactly one block today.
-- `apps/mobile/src/components/ui/BlockModal.tsx:109-110` is the only caller:
-  `seriesId = repeat.mode !== 'none' ? \`series-${baseId}\` : undefined`, then
-  `expandRepeat(base, seriesId)` → `addEvents()`.
-- `packages/core/src/types/event.ts:48-49` — `repeat?: RepeatConfig; seriesId?: string`.
-- `packages/core/src/store/useCalendarStore.ts:57-62` — `deleteSeriesFromDate(seriesId,
-  fromDate)` filters out `e.seriesId === seriesId && e.date >= fromDate`. It has existed with
-  **no UI** since before pass 4. Under the new model this becomes "set `endDate`", O(1).
-- `apps/mobile/src/components/ui/RepeatPicker.tsx` edits the `RepeatConfig`;
-  `:48` and `:58` have the coerce-on-keystroke bug (`Math.max(1, parseInt(t) || 1)`) — that
-  is **pass 9's** shared numeric input, don't fix it here unless it blocks you.
+**Numeric inputs (item 1) — four sites, not three.**
+- `apps/mobile/src/components/tasks/TaskBacklog.tsx:130` —
+  `onChangeText={t => setNewDur(Math.max(5, parseInt(t) || 30))}`. Backspacing to empty
+  snaps to 30; typing "3" on the way to "30" snaps to 5. The field is effectively
+  uneditable.
+- `apps/mobile/src/components/ui/RepeatPicker.tsx:66` (interval, `|| 7`) and `:96` (count,
+  `|| 4`) — same shape. Pass 8 rewrote the file around them and deliberately left both.
+- `apps/mobile/src/components/ui/MinuteInput.tsx:49` —
+  `onChange(Math.max(0, Math.min(1440, parseInt(t) || 0)))`. Same family (empty → 0 →
+  the field shows "0"). It also renders the `↕ clock · 7:51 PM` helper line below, so
+  keep that when you swap its input.
+  Build one `NumericField` (`apps/mobile/src/components/ui/`) that keeps `useState<string>`
+  for the text, calls `onChange(number)` only on blur / submit, and takes `min`, `max`,
+  `fallback`. Re-sync the string when the numeric `value` prop changes from outside (the
+  quick-duration buttons in `BlockModal` set duration without touching the input).
 
-**The consumer list is the real cost — it is five sites, not four.** *Decisions on record*
-names four; pass 7 found a fifth plus core's own selector. Every one of these filters raw
-`events` by date and must go through the new expansion selector:
-- `apps/mobile/src/app/day.tsx:68` — `events.filter(e => e.date === selectedDate)`
-- `apps/mobile/src/app/_layout.tsx:28` — `eventsOn()`, used by **notifications** (`:157`,
-  `:170`, `:173`) *and* indirectly by watch sync
-- `apps/mobile/src/services/watchSync.ts:34` — `events.filter(e => e.date === date)`
-- `apps/mobile/src/components/tasks/TaskBacklog.tsx:46`
-- **`apps/mobile/src/app/watch.tsx:27`** — the SVG watch-face preview (missed by the decision
-  note)
-- **`packages/core/src/store/useCalendarStore.ts:64`** — `getEventsForDate()`, the natural
-  home for the expansion
+**Edit on row press (item 2).**
+- `apps/mobile/src/components/tasks/TodoRow.tsx:24-29` — the row is a plain `View`; the
+  only pressables are the checkbox (`:31-36`) and AUTO / PICK / ✕ (`:60-68`). No `onPress`
+  prop exists.
+- `apps/mobile/src/components/tasks/TaskBacklog.tsx:102-165` — the add form (title, notes,
+  duration, priority, category) is inline in the `SectionList` header; there is no edit
+  form. `useTodoStore.updateTodo(id, patch)` already exists
+  (`packages/core/src/store/useTodoStore.ts:38`) and is wired into `TaskBacklog` (`:24`)
+  but never called.
+- Simplest shape: lift the add form's fields into a `TodoSheet` used for both add and
+  edit (the way `BlockModal` has `AddForm`/`EditForm`), open it from a row `Pressable`
+  wrapping the content column (not the whole row — the checkbox and the action buttons
+  must keep their own targets). A `scheduled` todo's duration edit should **not** resize
+  its placed block silently; either leave the block alone or say so in the sheet.
 
-`_layout.tsx:32-33`'s `sameEvents()` does a **shallow identity compare** to decide whether
-today's notifications need rescheduling. Virtual occurrences are rebuilt on every call, so
-identity compare will report "changed" every time and reschedule notifications in a loop.
-**Fix that deliberately** — compare by `id` + `startMinute` + `durationMinutes` + `title`, or
-memoise the expansion. This is the single most likely way to ship a battery bug.
-
-**Design points already settled** (from *Decisions on record*):
-- A series is stored **once** as its base event + `RepeatConfig`. Reads expand it for the
-  requested date range.
-- "Forever" = absence of `endDate`/`count`. Expansion must therefore always be **bounded by
-  the requested range**, never by the rule.
-- "Cancel from this date" sets `endDate`; "cancel all" deletes the rule. Both O(1).
-- Editing/deleting one occurrence needs per-series `exceptions: string[]` and
-  `overrides: Record<date, Partial<CalendarEvent>>`.
-- A virtual occurrence needs a stable synthetic id **`${seriesId}:${date}`** for React keys,
-  drag/resize and todo links. Anything that takes an id — `updateEvent`, `deleteEvent`,
-  `linkedTodoId` — must learn to recognise and resolve that shape.
-
-**Store migration is required.** `useCalendarStore` persists under
-`1440-planner-calendar-v1` (`:67`) with `skipHydration: true` (`:70`) and **no `version` /
-`migrate`**. The device carries real materialised rows from earlier passes. Add
-`version: 2` + `migrate`, collapsing rows that share a `seriesId` back into one base event +
-rule. Non-repeating events (no `seriesId`) must pass through untouched — most of the test
-data is non-repeating. Read `packages/core/src/store/useCalendarStore.ts:1-24` first: the
-storage adapter is injected later via `persist.setOptions()`, so the migration runs at
-`rehydrate()` time, not at module load.
-
-**The date picker.** `BlockModal.tsx:155-162` is a bare `TextInput` with
-`keyboardType="numeric"` and a `YYYY-MM-DD` placeholder — unusable. SDK 57 ships
-`@react-native-community/datetimepicker` support via `npx expo install`; check
-`npx expo-doctor` stays 21/21 after adding it. Note `apps/mobile/src/components/calendar/
-DateStrip.tsx` already has a month-grid picker for the Day screen — **reuse it if it fits**
-rather than adding a dependency.
+**Repeat on tasks (item 3) — needs a small model decision, then reuse pass 8.**
+- `packages/core/src/types/todo.ts:6-15` — `Todo { id, title, priority, categoryId,
+  durationMinutes, status, notes?, linkedEventId? }`. No date, no repeat.
+- Pass 8's rule machinery is date-keyed: `packages/core/src/utils/repeat.ts` —
+  `occurrencesOn(base, date)`, `expandSeries(base, from, to)`, `isSeries`,
+  `repeatInterval`, `describeRepeat`; `RepeatConfig` in `packages/core/src/types/repeat.ts`
+  with `exceptions` / `overrides`. It is typed on `CalendarEvent`, so reuse means either a
+  small generic (`{ date: string; repeat?: RepeatConfig }`) or a todo → pseudo-event
+  adapter. Prefer the generic; do not copy the expansion.
+- A repeating todo needs an anchor date. Proposed minimum: `Todo.dueDate?: string` and
+  `Todo.repeat?: RepeatConfig`; the backlog shows a pending todo once per rule date that
+  is ≤ today (and not done for that date), with per-date completion recorded as
+  `repeat.exceptions` (done dates) — the same "stored once, expanded on read" rule as
+  blocks. **Write the decision into STATUS → Decisions on record before coding**, the
+  way pass 6-follow-up did for blocks.
+- `apps/mobile/src/services/placeTodo.ts` creates a **plain** block with `linkedTodoId`;
+  a todo has never been linked to a repeat occurrence id (`<seriesId>:<date>`). Keep it
+  that way: placing an occurrence of a repeating todo should make a plain block for that
+  date. `deleteEvent` unlinks on plain ids only (`useCalendarStore.ts`, the
+  `linkedTodoId` branch) — exceptions do not unlink anything.
+- `RepeatPicker` needs a `startDate` prop (pass 8) — pass the todo's `dueDate`.
 
 **Traps that are still live** (`CLAUDE.md`):
-- **No dynamic `import()` in `packages/core`** — Metro serves it as a split bundle whose URL
-  the dev server rejects, and the code after it silently never runs. Static imports only.
-- **Typed-routes trap**: creating files outside `src/app` while Metro runs makes
-  expo-router write backslash "routes" into `.expo/types/router.d.ts` and `tsc` fails there.
-  Restart Metro, then re-run `tsc`.
-- `DESIGN_TOKENS` stays in `packages/core/src/types/event.ts` — no `theme.ts`.
-- Touch targets inside `DayGrid`'s long-press `Pressable` must stay `pointerEvents="none"`.
+- **Never filter `useCalendarStore.events` by date yourself** — `eventsOnDate()` /
+  `datesWithEvents()`. Occurrence ids `<seriesId>:<date>` pass through
+  `updateEvent`/`deleteEvent` unchanged.
+- **No dynamic `import()` in `packages/core`.**
+- **Typed-routes trap** — creating files outside `src/app` while Metro runs *can* break
+  `tsc` on `.expo/types/router.d.ts` (it did not in pass 8, it did in passes 4–6). Restart
+  Metro, re-run `tsc`.
+- `DESIGN_TOKENS` stays in `packages/core/src/types/event.ts`; `#34D399` / `#1a3d2a` in
+  `TodoRow.tsx:21,26,114-117` are Known debt — leave them unless you add a `success` token
+  on purpose.
+- Touch targets inside `DayGrid`'s long-press `Pressable` stay `pointerEvents="none"`.
+- **Fast Refresh applies edits to the running app.** If you need behaviour from the
+  pre-change code on the device (data setup, a before/after), do it before the first edit.
 
 ## Constraints
 
-- Pass 8 is the repeat rework and the date picker. **No pass-9 work** (the shared numeric
-  input), no categories, no watch rings.
-- Do not touch `watch/android-wearos` — it is the regression check, not a target.
-- JS-only if you can manage it; a native rebuild needs disk the machine may not have.
-- Time is **minutes from midnight**; convert only at the display edge.
+- Pass 9 is the three Tasks items. **No categories, no schedule view, no watch rings.**
+- JS-only. Do not touch `watch/android-wearos`.
+- Time is minutes from midnight; convert only at the display edge.
+- Any new persisted field on `Todo` must survive rehydration without a migration (all
+  new fields optional) — say so in the PR if you rely on that.
 
-## Verification (required; `<watch>` = `192.168.1.68:5555`)
+## Verification (required)
 
-1. `adb devices` lists the phone and `<watch>`.
-2. **Migration**: relaunch against the existing device data — the pass-7 test blocks
-   (`OtherDay3`, `PickTest`, `Test1`, `SdkNotif`, `SdkWatch`) must all still be on
-   2026-09-24, and the pending `SdkPick` todo still pending. Say explicitly whether any
-   materialised series existed to migrate; if none did, **create one on the old build first**
-   or state that the migration path is untested.
-3. **Forever**: a daily rule with no end → scroll a month forward, occurrences all the way;
-   no unbounded loop, no jank. Check memory/CPU are not climbing.
-4. **Cancel with scope**: "this and future" from a mid-series date → earlier occurrences stay,
-   later ones gone, and it survives a force-stop. "All" → the whole series gone.
-5. **One occurrence**: edit a single occurrence (override) and delete a single occurrence
-   (exception); both survive a force-stop and do not affect siblings.
-6. **Nothing regressed**: cold start → Day 3×; notifications still fire at the right minute
-   (lead 0, block 3 min out, `dumpsys alarm` shows `window=0
-   exactAllowReason=policy_permission`, `notify(` within ~100 ms — pass 7 measured 124 ms);
-   PICK flow still places and still returns the todo to PENDING on delete; watch sync still
-   delivers (`putDataItem ok` → `Received snapshot` → `[12:TEXT]`, pass 7 measured 851 ms)
-   **and a repeating block shows correctly as `nextBlock`**.
-7. **The notification loop check**: with a repeating block on today, watch the
-   `[notifications] N reminder(s)` log line for 2 quiet minutes. It must **not** repeat every
-   render. This is the `sameEvents` identity-compare trap above.
-8. `npx tsc --noEmit -p apps/mobile` and `-p packages/core` clean; `npx expo-doctor` 21/21.
+1. `adb devices` lists the phone (watch optional).
+2. **Numeric input**: on Tasks → `+ TASK`, clear DURATION completely (no snap), type
+   `3` then `0` → shows `30`, blur on empty → falls back to `30`; ADD TASK → row shows
+   `30m`. Same on `BlockModal` START/DURATION (`MinuteInput`) and on `RepeatPicker`'s
+   OCCURRENCES and EVERY (DAYS). The `↕ clock · …` helper line still updates.
+3. **Edit on press**: tap a pending row's title → sheet opens with its values; change
+   title + duration → row updates; `am force-stop` + relaunch → persisted. Checkbox,
+   AUTO, PICK and ✕ still work without opening the sheet.
+4. **Repeat on tasks**: a daily repeating todo shows once today; mark it done → it is done
+   for today only and reappears tomorrow (fake it by checking the store JSON: done dates
+   in `exceptions`, base row untouched). PICK on it places a plain block linked to that
+   todo; deleting the block returns it to pending.
+5. **Nothing regressed**: cold start → Day 3×; Tasks → PICK flow (pass 4 recipe); the
+   pass-8 `MigSeries` still shows on Sep 26 (30m) and not on Sep 27/28; the notification
+   log line does not repeat in a 2-minute quiet window.
+6. `npx tsc --noEmit -p apps/mobile` and `-p packages/core` clean; `npx expo-doctor` 21/21.
 
 ## Wrap-up
 
-- Conventional Commits: `feat(repeat): expand repeat rules at read time`,
-  `feat(repeat): cancel with scope`, `feat(repeat): date picker in the block modal`,
-  `docs: pass-8 …`.
+- Conventional Commits: `feat(tasks): shared numeric input that coerces on blur`,
+  `feat(tasks): edit a task from its row`, `feat(tasks): repeat rules on todos`,
+  `docs: pass-9 …`.
 - Push, open the PR through the GitHub API (no `gh`; recipe in the memory note), **do not
-  merge**. Say which branch you stacked on. PR description: the model change, the consumer
-  list you migrated, the store migration and what it did to real device data, the
-  verification list with logcat excerpts, anything left.
-- `docs/STATUS.md`: TL;DR PR count and open branches; Known debt → drop the repeat half of
-  "Unimplemented settings"; strike item 8 from "Next up"; pass-8 log entry; replace this
-  section with **the pass-9 handoff — Tasks**: the shared numeric input that holds the raw
-  string and coerces on blur (`TaskBacklog.tsx:129`, `RepeatPicker.tsx:48,58`), open/edit a
-  task on row press (`TodoRow` has buttons but no row handler), and repeat on tasks (`Todo`
-  has no repeat field at all — and after pass 8 there is a rule model to reuse).
-- **Print the pass-9 handoff prompt in full in the chat too**, in one fenced block, as the
+  merge**. Say which branch you stacked on. PR description: the numeric-input sites, the
+  todo model decision, how completion of a repeating todo is stored, verification with
+  logcat/store excerpts, anything left.
+- `docs/STATUS.md`: TL;DR PR count and open branches; Known debt → strike "Numeric inputs
+  coerce on every keystroke"; strike item 9 from "Next up"; Decisions on record → the todo
+  repeat model; pass-9 log entry; replace this section with **the pass-10 handoff —
+  Schedule view** (an agenda list of blocks across days; self-contained, no core changes;
+  must use `eventsInRange()` / `expandSeries()` for repeat occurrences, never raw
+  `events`).
+- **Print the pass-10 handoff prompt in full in the chat too**, in one fenced block, as the
   last thing in the session (`CLAUDE.md` → Session workflow).
-- Update the `device-and-tooling` memory note: new Metro PID, whether both `:5555` pins
-  survived, the disk situation, any new traps.
+- Update the `device-and-tooling` memory note: Metro PID, phone IP/pin state, disk, any
+  new traps.

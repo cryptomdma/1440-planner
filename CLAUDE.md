@@ -166,6 +166,14 @@ not to land, the check is still the same — the Gradle log must show
 - Time is **minutes from midnight (0–1439)**, not clock time. Convert only at the display
   edge, via the helpers in `packages/core/src/utils/time.ts`.
 - Grid constants (`PPM`, `BLOCK_SIZE`, `RULER_W`) come from core — never inline them.
+- **Never filter `useCalendarStore.events` by date yourself.** A repeat series is stored
+  *once* (base event + `repeat` rule) and expanded at read time, so `events.filter(e =>
+  e.date === d)` silently misses every occurrence. Use `eventsOnDate()` /
+  `datesWithEvents()` from `packages/core/src/utils/repeat.ts`. Occurrence ids are
+  `<seriesId>:<date>`; `updateEvent`/`deleteEvent` already resolve them (override /
+  exception), so pass them through unchanged. When comparing two reads of a day (as the
+  notification resync does), compare by fields, not identity — occurrences are rebuilt on
+  every read. Since pass 8.
 - **No dynamic `import()` in `packages/core`.** Metro serves a lazy import as a split bundle
   whose URL is the path relative to `apps/mobile`; for core that is `..\..\packages\core\…`
   and the dev server rejects it (`Failed to load split bundle`, a "Possible unhandled
