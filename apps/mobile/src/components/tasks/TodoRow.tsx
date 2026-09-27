@@ -1,22 +1,30 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
-import { CATEGORIES, PRIORITIES, DESIGN_TOKENS as C } from '@1440/core';
+import {
+  CATEGORIES, PRIORITIES, DESIGN_TOKENS as C,
+  describeRepeat, formatDateDisplay, isToday,
+} from '@1440/core';
 import type { Todo } from '@1440/core';
 
 interface Props {
-  todo:       Todo;
-  onDone:     (id: string) => void;
-  onDelete:   (id: string) => void;
-  onSchedule: (todo: Todo) => void;
-  onPick:     (todo: Todo) => void;
+  // For a repeating todo this is the *resolved* view (status of the current
+  // occurrence), built by TaskBacklog from resolveTodo().
+  todo:            Todo;
+  occurrenceDate?: string;   // repeating todos only
+  onDone:          (id: string) => void;
+  onDelete:        (id: string) => void;
+  onSchedule:      (todo: Todo) => void;
+  onPick:          (todo: Todo) => void;
+  onPress?:        (todo: Todo) => void;   // the content column; buttons keep their own targets
 }
 
-export default function TodoRow({ todo, onDone, onDelete, onSchedule, onPick }: Props) {
+export default function TodoRow({ todo, occurrenceDate, onDone, onDelete, onSchedule, onPick, onPress }: Props) {
   if (!todo) return null;
   const cat        = CATEGORIES.find(c => c.id === todo.categoryId);
   const pri        = PRIORITIES.find(p => p.id === todo.priority);
   const isScheduled = todo.status === 'scheduled';
   const isDone      = todo.status === 'done';
+  const repeatText  = todo.repeat ? describeRepeat(todo.repeat) : '';
 
   const borderLeftColor = isDone ? C.L4 : isScheduled ? '#34D399' : pri?.color ?? '#fff';
 
@@ -35,8 +43,8 @@ export default function TodoRow({ todo, onDone, onDelete, onSchedule, onPick }: 
         {isDone && <Text style={s.check}>✓</Text>}
       </Pressable>
 
-      {/* Content */}
-      <View style={s.content}>
+      {/* Content — pressing it opens the edit sheet */}
+      <Pressable style={s.content} onPress={onPress ? () => onPress(todo) : undefined}>
         <Text
           style={[s.title, isDone && s.titleDone]}
           numberOfLines={1}
@@ -50,9 +58,13 @@ export default function TodoRow({ todo, onDone, onDelete, onSchedule, onPick }: 
           <Text style={[s.tag, { color: cat?.color, backgroundColor: cat?.bg }]}>{cat?.label}</Text>
           <Text style={[s.priTag, { color: pri?.color }]}>{pri?.label}</Text>
           <Text style={s.durTag}>{todo.durationMinutes}m</Text>
+          {!!repeatText && <Text style={s.repTag}>↺ {repeatText}</Text>}
+          {!!occurrenceDate && !isToday(occurrenceDate) && (
+            <Text style={s.durTag}>{formatDateDisplay(occurrenceDate)}</Text>
+          )}
           {isScheduled && <Text style={s.calTag}>on calendar</Text>}
         </View>
-      </View>
+      </Pressable>
 
       {/* Actions */}
       {!isDone && !isScheduled && (
@@ -111,6 +123,7 @@ const s = StyleSheet.create({
   tag:       { fontSize: 9, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 3 },
   priTag:    { fontSize: 9, fontWeight: '600' },
   durTag:    { fontSize: 9, color: C.L3 },
+  repTag:    { fontSize: 9, color: C.L2 },
   calTag:    { fontSize: 9, color: '#34D399', backgroundColor: 'rgba(52,211,153,0.12)', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 3 },
   actions:   { flexDirection: 'row', gap: 4, flexShrink: 0 },
   autoBtn:   { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 3, backgroundColor: 'rgba(52,211,153,0.15)', borderWidth: 1, borderColor: '#34D399' },
