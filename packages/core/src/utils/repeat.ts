@@ -12,6 +12,13 @@ import { dateAddDays, daysBetween, formatDateDisplay } from './dateHelpers';
 const OVERRIDE_KEYS: (keyof RepeatOverride)[] =
   ['title', 'date', 'startMinute', 'durationMinutes', 'categoryId', 'notes'];
 
+// The part of a series the rule arithmetic needs. CalendarEvent satisfies it;
+// so does a repeating Todo once its `dueDate` is passed as `date` (todoRepeat.ts).
+export interface Repeatable {
+  date: string;
+  repeat?: RepeatConfig;
+}
+
 export function isSeries(e: CalendarEvent | null | undefined): e is CalendarEvent & { repeat: RepeatConfig } {
   return !!e?.repeat && e.repeat.mode !== 'none';
 }
@@ -53,7 +60,7 @@ export function pickOverride(patch: Partial<CalendarEvent>): RepeatOverride {
   return out;
 }
 
-function occurrenceIndex(base: CalendarEvent, r: RepeatConfig, date: string): number | null {
+function occurrenceIndex(base: Repeatable, r: RepeatConfig, date: string): number | null {
   const step = repeatInterval(r);
   if (step <= 0) return null;
   const d = daysBetween(base.date, date);
@@ -62,6 +69,25 @@ function occurrenceIndex(base: CalendarEvent, r: RepeatConfig, date: string): nu
   if (r.count !== undefined && n >= Math.max(1, r.count)) return null;
   if (r.endDate && date > r.endDate) return null;
   return n;
+}
+
+// The last rule date on or before `date`, honouring `count` and `endDate`, or
+// null when the rule has not started yet. O(1). Exceptions and overrides are
+// not consulted — the caller decides what a hit on that date means (a deleted
+// block, a completed todo).
+export function lastRuleDateOnOrBefore(base: Repeatable, date: string): string | null {
+  const r = base.repeat;
+  if (!r || r.mode === 'none') return base.date <= date ? base.date : null;
+  const step = repeatInterval(r);
+  let n = Math.floor(daysBetween(base.date, date) / step);
+  if (n < 0) return null;
+  if (r.count !== undefined) n = Math.min(n, Math.max(1, r.count) - 1);
+  if (r.endDate) {
+    const last = Math.floor(daysBetween(base.date, r.endDate) / step);
+    if (last < 0) return null;
+    n = Math.min(n, last);
+  }
+  return dateAddDays(base.date, n * step);
 }
 
 function materialise(base: CalendarEvent, ruleDate: string, override: RepeatOverride | undefined): CalendarEvent {

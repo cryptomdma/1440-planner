@@ -25,7 +25,10 @@ interface TodoState {
   deleteTodo:           (id: string) => void;
   linkEventToTodo:      (todoId: string, eventId: string) => void;
   unlinkEventFromTodo:  (todoId: string) => void;
-  setDone:              (todoId: string, done: boolean) => void;
+  // `date` is the occurrence being checked. For a repeating todo it is recorded
+  // in `repeat.exceptions` (done dates) and the base row's status is untouched
+  // apart from clearing its calendar link; for a plain todo it is ignored.
+  setDone:              (todoId: string, done: boolean, date?: string) => void;
 }
 
 export const useTodoStore = create<TodoState>()(
@@ -54,11 +57,23 @@ export const useTodoStore = create<TodoState>()(
           ),
         })),
 
-      setDone: (todoId, done) =>
+      setDone: (todoId, done, date) =>
         set(s => ({
-          todos: s.todos.map(t =>
-            t.id === todoId ? { ...t, status: done ? ('done' as const) : ('pending' as const) } : t
-          ),
+          todos: s.todos.map(t => {
+            if (t.id !== todoId) return t;
+            if (date && t.repeat && t.repeat.mode !== 'none') {
+              const exceptions = (t.repeat.exceptions ?? []).filter(d => d !== date);
+              if (done) exceptions.push(date);
+              const repeat = { ...t.repeat };
+              if (exceptions.length) repeat.exceptions = exceptions; else delete repeat.exceptions;
+              // Completing an occurrence closes out its block link so the next
+              // occurrence starts unplaced; the block itself is left alone.
+              return done
+                ? { ...t, repeat, status: 'pending' as const, linkedEventId: undefined }
+                : { ...t, repeat };
+            }
+            return { ...t, status: done ? ('done' as const) : ('pending' as const) };
+          }),
         })),
     }),
     {
