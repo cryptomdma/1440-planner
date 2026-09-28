@@ -1,8 +1,9 @@
 import React from 'react';
-import { View, Text, Pressable, TextInput, StyleSheet, Platform } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { DESIGN_TOKENS as C, dateAddDays } from '@1440/core';
 import type { RepeatConfig, RepeatMode } from '@1440/core';
 import DateField from './DateField';
+import NumericField from './NumericField';
 
 interface Props {
   value:     RepeatConfig;
@@ -59,11 +60,12 @@ export default function RepeatPicker({ value, onChange, startDate, accentColor =
           {value.mode === 'custom' && (
             <View style={s.field}>
               <Text style={s.lbl}>EVERY (DAYS)</Text>
-              <TextInput
+              <NumericField
                 style={s.input}
-                keyboardType="numeric"
-                value={String(value.interval ?? 7)}
-                onChangeText={t => set({ interval: Math.max(1, parseInt(t) || 7) })}
+                value={value.interval ?? 7}
+                onChange={v => set({ interval: v })}
+                min={1}
+                fallback={7}
               />
             </View>
           )}
@@ -89,11 +91,12 @@ export default function RepeatPicker({ value, onChange, startDate, accentColor =
           {endKind === 'count' && (
             <View style={s.field}>
               <Text style={s.lbl}>OCCURRENCES</Text>
-              <TextInput
+              <NumericField
                 style={s.input}
-                keyboardType="numeric"
-                value={String(value.count ?? 4)}
-                onChangeText={t => set({ count: Math.max(1, parseInt(t) || 4) })}
+                value={value.count ?? 4}
+                onChange={v => set({ count: v })}
+                min={1}
+                fallback={4}
               />
             </View>
           )}

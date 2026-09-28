@@ -3,6 +3,7 @@ import {
   View, TextInput, Text, Pressable, StyleSheet, Platform,
 } from 'react-native';
 import { DESIGN_TOKENS as C, minuteToTimeStr, clockToMinute } from '@1440/core';
+import NumericField from './NumericField';
 
 interface Props {
   value:       number;
@@ -42,11 +43,12 @@ export default function MinuteInput({ value, onChange, accentColor }: Props) {
   return (
     <View>
       {mode === 'min' ? (
-        <TextInput
+        <NumericField
           style={[s.input, { borderColor: color, color }]}
-          keyboardType="numeric"
-          value={String(value)}
-          onChangeText={t => onChange(Math.max(0, Math.min(1440, parseInt(t) || 0)))}
+          value={value}
+          onChange={onChange}
+          min={0}
+          max={1440}
         />
       ) : (
         <View style={s.row}>

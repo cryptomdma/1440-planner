@@ -12,8 +12,11 @@ export type { SchedulePlacement } from './utils/schedule';
 export {
   isSeries, repeatInterval, occurrenceId, parseOccurrenceId, findSeries,
   occurrencesOn, expandSeries, eventsOnDate, eventsInRange, datesWithEvents,
-  describeRepeat, migrateMaterialisedSeries,
+  describeRepeat, migrateMaterialisedSeries, lastRuleDateOnOrBefore,
 } from './utils/repeat';
+export type { Repeatable } from './utils/repeat';
+export { isRepeatingTodo, todoOccurrenceDate, resolveTodo } from './utils/todoRepeat';
+export type { ResolvedTodo } from './utils/todoRepeat';
 
 // Stores
 export { useCalendarStore, initCalendarStorage } from './store/useCalendarStore';
