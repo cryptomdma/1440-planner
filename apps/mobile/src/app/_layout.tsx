@@ -41,6 +41,7 @@ const TABS = [
   { path: '/day',      label: 'DAY'   },
   { path: '/watch',    label: 'WATCH' },
   { path: '/tasks',    label: 'TASKS' },
+  { path: '/schedule', label: 'SCHEDULE' },
 ] as const;
 
 export default function RootLayout() {
