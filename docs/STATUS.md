@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated: 2026-09-26** — read this first; it is the source of truth for project state.
+**Last updated: 2026-09-28** — read this first; it is the source of truth for project state.
 The other docs describe *intent*, and some of it predates what actually shipped.
 
 ---
@@ -26,11 +26,13 @@ face shows the block you are *in* rather than "No blocks". Per-block arcs are st
 and now have a concrete plan. **Pass 9 did the Tasks screen:** every numeric input holds
 its text and coerces on blur (the duration field can finally be cleared and typed into), a
 task opens in an edit sheet when its row is pressed, and todos can repeat — stored once,
-with completion recorded per date. Nineteen PRs have merged, #19 among them (`6096689`);
-**three branches are open and stacked**: `chore/sdk-upgrade` (PR #20, pass 7),
-`feat/repeat-rules` (PR #21, passes 8 and 8.5, on #20) and `feat/tasks-edit` (PR #22,
-pass 9, on #21). Merge in that order. The owner's feature backlog is staged as passes
-10–13 under **Next up**.
+with completion recorded per date. **Pass 10 added the Schedule view:** a fourth tab
+listing every block from today forward, grouped by day, bounded by a 14-day window that
+SHOW MORE extends — a row tap opens that day on the Day screen. Nineteen PRs have merged,
+#19 among them (`6096689`); **four branches are open and stacked**: `chore/sdk-upgrade`
+(PR #20, pass 7), `feat/repeat-rules` (PR #21, passes 8 and 8.5, on #20), `feat/tasks-edit`
+(PR #22, pass 9, on #21) and `feat/schedule-view` (PR #23, pass 10, on #22). Merge in that
+order. The owner's feature backlog is staged as passes 11–13 under **Next up**.
 
 ---
 
@@ -72,6 +74,16 @@ on), four tabs
   current occurrence; checking it records the date in `repeat.exceptions` and it comes
   back pending on the next rule date (`packages/core/src/utils/todoRepeat.ts`). Every
   numeric field on the phone is `NumericField` (`components/ui/`), which coerces on blur.
+- **Schedule (pass 10)** — `apps/mobile/src/app/schedule.tsx` →
+  `components/schedule/ScheduleList.tsx`: an agenda of every block from today forward,
+  grouped by day (header = date, block count, scheduled minutes; today's header in the
+  count-mode accent), each row with start time, duration, title, category chip, `↺ rule`
+  for a series occurrence, `☑ from tasks` for a placed todo, a NOW tag on the running block
+  and dimming for today's finished ones. Read through `eventsInRange()` over **today →
+  today + 14 days**, memoised on `[events, from, to]`; SHOW MORE widens the window by 14
+  each tap, so a forever rule costs exactly the days on screen. Tapping a row sets
+  `selectedDate` and pushes `/day` — editing stays on the Day screen. Past days are not
+  listed. No core changes.
 - **Watch** — SVG watch-face *preview*, phone-side only
 - **Watch sync (Android, passes 5–6)** — `apps/mobile/modules/wearable-data-layer/` (Expo
   local module, Kotlin) puts the `WatchSnapshot` JSON at Data Layer path `/1440/snapshot`.
@@ -317,8 +329,9 @@ where adding the category ring later is a few more calls rather than a rebuild.
 9. ~~**Tasks.**~~ **Done in pass 9** (PR #22) — `NumericField` at all four sites,
    `TodoSheet` for add and edit (opened from a row press), and repeat on todos with
    per-date completion (Decisions on record).
-10. **Schedule view.** An agenda list of blocks across days. Self-contained; no core
-    changes.
+10. ~~**Schedule view.**~~ **Done in pass 10** (PR #23) — SCHEDULE tab, agenda grouped by
+    day over a view-bounded window (today + 14, SHOW MORE), row tap → Day on that date.
+    No core changes.
 11. **Categories.** Add/delete/edit, plus per-category time ranges (`Personal 06:00–12:00`,
     `Work 12:00–18:00`, …) generalising today's single wake/sleep window. **The heavy
     one:** `CategoryId` is a TS union and `CATEGORIES` a frozen const in
@@ -368,6 +381,87 @@ Not staged, deliberately:
 ---
 
 ## Session log
+
+### 2026-09-28 — Pass 10: Schedule view — agenda of blocks across days (PR #23, open, stacked on #22)
+Branch `feat/schedule-view`, **branched from `feat/tasks-edit` (`c21d81a`), not `main`** —
+`main` was still at #19 (`6096689`) with #20, #21 and #22 open, so #23 carries all three
+and merges last. JS-only, no `packages/core` changes; Metro from pass 7 reused (node PID
+61684, fourth pass on it). The phone had **moved to `192.168.1.101`** and lost its `:5555`
+pin again (it was on a wireless-debugging port); re-pinned over that link. Disk 2.07 GB
+free. Watch not touched.
+
+**What shipped.** A fourth tab, SCHEDULE (`TABS` in `_layout.tsx`), routing to
+`apps/mobile/src/app/schedule.tsx`, which renders
+`apps/mobile/src/components/schedule/ScheduleList.tsx`: a `SectionList` of every block
+from today forward, one section per day that has blocks (header: `TODAY · MON, SEP 28` in
+the count-mode accent, else the date; right side `n blks · 1h 15m`). A row is start time +
+duration on the left, title (monospace, as `TodoRow`) and a tag row: category chip
+(`color`/`bg` from `CATEGORIES`), `NOW` on the block containing the current minute, `↺ daily
+· forever` for a series occurrence (`isSeries` + `describeRepeat`), `☑ from tasks` for a
+placed todo. Today's finished blocks render at half opacity. A page header shows the window
+and block count; the footer is `SHOW MORE · +14 DAYS`; empty state when the window has
+nothing.
+
+**The range decision.** The list is bounded by the *view*, never by the rule: `from =
+today()`, `to = from + days − 1`, `days` starts at 14 and SHOW MORE adds 14 (component
+state, so it resets to 14 on remount — deliberate; there is no "jump to date"). One
+`eventsInRange(events, from, to)` per render, memoised on `[events, from, to]`, sorted by
+date / start / title and grouped by the occurrence's *display* date, so an override that
+moved an occurrence lands under the right day. `useCurrentMinute()` drives the NOW tag and
+rolls `today()` — and with it the whole window — at midnight. **Past days are not listed**
+(the Day screen's strip already covers them); that is a product choice, not a limitation.
+
+**Row tap.** `setSelectedDate(occ.date)` then `router.push('/day')`. The Day grid scrolls
+to "now" on today and to midnight elsewhere on mount, so nothing more is needed. The
+agenda deliberately does not open `BlockModal`: the edit / delete-with-scope / undo
+plumbing lives in `day.tsx` and navigating there is the whole feature.
+
+**Verification on-device** (`192.168.1.101:5555`; screenshots in the PR)
+1. Phone listed after the re-pin. ✅
+2. SCHEDULE is the fourth tab and opens the list. Today's section first with the owner's
+   own data: `Daily Huddle` 7:30 AM `↺ daily · forever`, `SdkPick` 8:00 AM and `NumEdit`
+   8:45 AM both `☑ from tasks`. `MigSeries` shows on **no** day, as the handoff predicted
+   for a session after 09-26 (`count: 4` from 09-25 with 27/28 excepted). The `RepPick` /
+   `PickTest` blocks are on 09-24/25 — past, so not listed; the badge was instead verified
+   on the block the PICK regression placed (step 5). ✅
+3. **A forever rule stays bounded.** Used the owner's real `Daily Huddle` (daily · forever
+   from 09-28) instead of creating and deleting a test series — same code path, no risk to
+   their data. Window 14 → 28 → 42 → 56 days over three SHOW MORE taps: header `Mon, Sep 28
+   → Sun, Oct 11 · 16 blocks` → `… → Sun, Nov 22 · 58 blocks` (56 daily + 2), the series
+   under every day. PSS **522 → 575 → 592 → 596 MB** — the first step is the list's own
+   rows appearing, then it flattens. ✅
+4. Row tap: `NumEdit` (today) → Day on `Mon, Sep 28`, grid on now (3–7 AM visible at
+   05:18); `Daily Huddle` under `WED, SEP 30` → Day on `Wed, Sep 30`, strip highlighted,
+   TODAY button shown, grid at 12:00 AM. ✅
+5. Nothing regressed: cold start → Day **3/3**. Tasks: `NumEdit` still `↺ daily · forever`.
+   PICK flow on `PickTest` (unchecked to PENDING first): PICK → `PLACING · LONG-PRESS A
+   FREE SLOT` banner → long-press at 4:00 AM → block `_5m_3oNk…` (`fromTodo`,
+   `linkedTodoId`), todo `scheduled`, and SCHEDULE listed it at once as `4:00 AM · PickTest
+   · ☑ from tasks` (17 blocks); DELETE BLOCK → todo `pending`, block gone; re-checked done.
+   Notification quiet window: **zero** `[notifications]` lines from 05:23:12 to 05:25:44
+   with the app idle on Day, while the watch resync fired at :23:59 and :24:59. ✅
+6. `tsc --noEmit` clean on both projects — the new `components/schedule/` directory did
+   **not** trip the typed-routes trap this time; `expo-doctor` **21/21**. ✅
+
+**Found on the way**
+- **The tab bar's coordinates shifted again**: four tabs of 360 px each, so TASKS is now at
+  x≈900 and the old (1201, 2975) lands on SCHEDULE. Memory note updated.
+- **Tapping a block's title text on the Day grid does not open its sheet** — the title
+  sits inside the top resize-knob band. The follow-up "sheet swipe" then scrolled the
+  grid, which is how a test block briefly survived its own delete step. Tap the block's
+  vertical middle and confirm the sheet's `TITLE` label is in the dump before swiping.
+- The owner has real data on the phone now (`Daily Huddle`, `Kids`, `Cards`); test with
+  disposable blocks only.
+- `PickTest` (todo) lost its stale `linkedEventId` to the pass-4 block on 09-24 in the
+  PICK round-trip — it is `done` and unlinked now, which is cleaner than before.
+
+**Not done / caveats**
+- Past days are not listed and there is no jump-to-date; SHOW MORE only extends forward.
+- Row rendering is not virtualised beyond what `SectionList` does; at 56 days with one
+  daily series it is 58 rows and fine, but a user with ten daily series and SHOW MORE
+  pressed many times would eventually feel it — bound `days` (e.g. 90) if that ever bites.
+- Test data left on the phone: unchanged from pass 9 apart from `PickTest` above. Metro
+  (PID 61684) still up.
 
 ### 2026-09-26 — Pass 9: Tasks — numeric input that coerces on blur, edit-on-press, repeat on todos (PR #22, open, stacked on #21)
 Branch `feat/tasks-edit`, **branched from `feat/repeat-rules` (`713eb85`), not `main`** —
@@ -1193,160 +1287,216 @@ confirmed afterwards that `npx expo run:android` builds and launches on a physic
 
 ---
 
-## 🤝 Handoff prompt (pass 10)
+## 🤝 Handoff prompt (pass 11)
 
 > Standing rule (`CLAUDE.md` → Session workflow): every session ends by replacing this
 > section with the *next* session's prompt, in this format. Paste the block below as the
 > opening message of the next session.
 
-# 1440 Planner — Pass 10: Schedule view (agenda of blocks across days)
+# 1440 Planner — Pass 11: Categories (add / edit / delete, per-category time ranges)
 
-Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-26.
+Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-28.
 
-**Branching — three PRs are open and stacked.** #20 `chore/sdk-upgrade` (pass 7) ← #21
-`feat/repeat-rules` (passes 8, 8.5) ← #22 `feat/tasks-edit` (pass 9). #19 is merged.
-Check `git log origin/main --oneline | head` after `git fetch`:
-- All three merged → `git checkout main; git pull; git checkout -b feat/schedule-view`.
-- #22 not merged → branch from `feat/tasks-edit` and **say so in the PR**, as passes 7–9
-  did.
+**Branching — four PRs are open and stacked.** #20 `chore/sdk-upgrade` (pass 7) ← #21
+`feat/repeat-rules` (passes 8, 8.5) ← #22 `feat/tasks-edit` (pass 9) ← #23
+`feat/schedule-view` (pass 10). #19 is merged. Check `git log origin/main --oneline | head`
+after `git fetch`:
+- All four merged → `git checkout main; git pull; git checkout -b feat/categories`.
+- #23 not merged → branch from `feat/schedule-view` and **say so in the PR**, as passes
+  7–10 did.
 Do not merge anything yourself (`CLAUDE.md` → Git workflow); the repo owner merges.
 
 The memory note `device-and-tooling` holds the phone serial, adb path, the `:5555`
 recipe, the store-reading recipe (`exec-out run-as … cat databases/RKStorage` via `cmd`),
-the unfiltered-logcat recipe, the `uiautomator dump` → regex → tap recipe, and how to
-open a PR without `gh`. It is loaded into your context; use it.
+the unfiltered-logcat recipe, the `uiautomator dump` → regex → tap recipe, the new
+four-tab coordinates, and how to open a PR without `gh`. It is loaded into your context;
+use it.
 
-**Pass 9 is fully verified — nothing Tasks-side is owed.** Two staged alternatives if the
-owner would rather: **#12a** (block arcs on the real watch face) and **#13** (12/24-hour
+**Pass 10 is fully verified — nothing Schedule-side is owed.** Two staged alternatives if
+the owner would rather: **#12a** (block arcs on the real watch face) and **#13** (12/24-hour
 clock setting). Either swaps in for this prompt's Goal and Findings; the rest still applies.
 
 ## Prerequisites — check before writing anything
 
-1. **Disk.** ~1.7 GB free on C: at the end of pass 9. Pass 10 is JS-only, so Metro is all
-   you need, but check `(Get-PSDrive C).Free` early and **ask the owner to clear space
-   before any native build** — a phone rebuild needs several GB and fails at
-   `mergeDebugNativeLibs` with a message that never mentions disk.
+1. **Disk.** 2.07 GB free on C: at the start of pass 10. Pass 11 is JS-only (a new
+   zustand store in `packages/core` is still JS), so Metro is all you need, but check
+   `(Get-PSDrive C).Free` early and **ask the owner to clear space before any native
+   build** — a phone rebuild needs several GB and fails at `mergeDebugNativeLibs` with a
+   message that never mentions disk.
 2. **Metro.** The pass-7 `expo start` (node PID **61684**) was still on :8081 at the end of
-   pass 9 — `Get-NetTCPConnection -LocalPort 8081 -State Listen`. Reuse it: it bundles
-   from disk, so `am force-stop` + relaunch picks up edits (and Fast Refresh pushes
-   `apps/mobile` edits into the running app immediately — **do any "old build" data
-   setup before editing code**). If it is gone, `npm run mobile` from the repo root.
-3. **Phone** `R5CY72XEJKD`: `adb connect 192.168.1.97:5555` worked first time in pass 9
-   (the pin held; `.91` is dead). If `adb devices` shows it only on some other port,
-   re-pin with `adb -s 192.168.1.97:<port> tcpip 5555` over that link. Re-issue
-   `adb -s 192.168.1.97:5555 reverse tcp:8081 tcp:8081`. Check `dumpsys window | findstr
-   mCurrentFocus` before every tap sequence — the owner uses the phone mid-session.
-   **New rule from pass 9:** never tap a coordinate "where the keyboard chevron was" —
-   the Enter key on the numeric keypad closes the keyboard and the same spot then hits
-   whatever button is underneath (that is how `SdkPick` got deleted). Check
-   `dumpsys input_method | findstr mInputShown` first, and `uiautomator dump` before every
-   tap that is not on a field you just focused.
-4. **Watch** — not needed for pass 10 unless you change `watchSync.ts`. If you must:
-   `adb connect 192.168.1.68:5555`; the moment it connects, `input keyevent
-   KEYCODE_WAKEUP` and `settings put system screen_off_timeout 1800000`, and put `60000`
-   back at the end. A watch that has slept is unrecoverable over adb (pass 8.5).
+   pass 10 — `Get-NetTCPConnection -LocalPort 8081 -State Listen`. Reuse it: it bundles
+   from disk, so `am force-stop` + relaunch picks up edits. **A `packages/core` change
+   needs the force-stop + relaunch, not Fast Refresh alone** (pass 9). Do any "old build"
+   data setup before editing code. If Metro is gone, `npm run mobile` from the repo root.
+3. **Phone** `R5CY72XEJKD`: it was on **`192.168.1.101:5555`** at the end of pass 10 (it
+   moves: `.91` → `.97` → `.101` across passes, and the pin dies with each reboot). Try
+   `adb connect 192.168.1.101:5555`; if `adb devices` instead shows it on some other
+   `ip:port`, re-pin with `adb -s <ip>:<port> tcpip 5555` over that link, then connect on
+   `:5555`. Re-issue `adb -s <dev> reverse tcp:8081 tcp:8081`. Check `dumpsys window |
+   findstr mCurrentFocus` before every tap sequence — the owner uses the phone
+   mid-session and **has real data on it now** (`Daily Huddle`, a daily · forever series;
+   `Kids`, `Cards`). Never delete or edit those; test with your own blocks. Tab bar since
+   pass 10: DAY (180, 2975), WATCH (540, 2975), TASKS (900, 2975), SCHEDULE (1260, 2975).
+   To open a block's edit sheet tap its vertical middle, not its title (pass 10), and
+   confirm the sheet is up (`TITLE` in the dump) before swiping it.
+4. **Watch** — needed only for the one snapshot check in Verification step 5, and it can
+   be done from the phone-side logcat instead. If you do connect: `adb connect
+   192.168.1.68:5555`; the moment it connects, `input keyevent KEYCODE_WAKEUP` and
+   `settings put system screen_off_timeout 1800000`, and put `60000` back at the end. A
+   watch that has slept is unrecoverable over adb (pass 8.5).
 5. SDK 57, New Architecture on, `npx expo-doctor` 21/21 — keep it that way.
 
 ## Goal
 
-**Next up #10 — Schedule view**: a fourth tab, SCHEDULE, showing an agenda list of blocks
-across days — today first, grouped by day, each row with time, duration, title, category
-colour, and badges for repeat / from-tasks. Tapping a row opens that day on the Day
-screen. **Self-contained: no `packages/core` changes** — everything it needs exists.
+**Next up #11 — Categories**: the user can add, edit (label, colour) and delete
+categories, and give each an optional **time range** (`Personal 06:00–12:00`, `Work
+12:00–18:00`, …) that generalises today's single wake/sleep window. Every place that
+looks a category up by id keeps working for the five built-in ids *and* for user ids, and
+a block whose category was deleted has a defined, visible fate. **This is the heavy one:**
+`CategoryId` is a TS string union and `CATEGORIES` a frozen const, so it means a new
+persisted store, `id: string`, every lookup rewritten, and a deletion policy. The watch
+face is unaffected by design (colours are resolved to hex at send time).
 
 ## Findings — do not re-derive
 
-**Where it plugs in.**
-- Tabs are a const in `apps/mobile/src/app/_layout.tsx:40-44` (`TABS = [{ path: '/day',
-  label: 'DAY' }, …]`); the bar maps it at `:258` and switches with `router.push(tab.path)`
-  (`:264`). Add `{ path: '/schedule', label: 'SCHEDULE' }` and a route file
-  `apps/mobile/src/app/schedule.tsx` — **inside `src/app`**, so the typed-routes trap
-  (creating files elsewhere while Metro runs) does not apply. `tasks.tsx` (28 lines) is the
-  template for a thin route that renders one component.
-- Put the list in `apps/mobile/src/components/schedule/ScheduleList.tsx` (a new directory
-  outside `src/app` *can* trip `tsc` on `.expo/types/router.d.ts` — restart Metro, re-run).
+**The type and the const.**
+- `packages/core/src/types/event.ts:3` — `export type CategoryId = 'deep' | 'meeting' |
+  'admin' | 'break' | 'personal'`; `:5-10` `Category { id: CategoryId; label; color; bg }`;
+  `:12-18` `CATEGORIES: Category[]` with the five entries (`bg` is the colour at 0.18
+  alpha — derive it from `color` in the new model so a user picks one colour, not two);
+  `:46` `CalendarEvent.categoryId: CategoryId`. `packages/core/src/types/todo.ts:11`
+  `Todo.categoryId: CategoryId`. Both are re-exported from `packages/core/src/index.ts:3-4`.
+- **Make `CategoryId = string`** and keep the five built-in ids as the seed, so no event
+  or todo row needs migrating (persisted stores are `1440-planner-{calendar,todos,
+  settings}-v1`; the calendar store is at `version: 2` — do not bump it for this).
 
-**Data — the one rule that matters.**
-- **Never `events.filter(e => e.date …)`.** A series is one stored base event; use
-  `eventsInRange(events, from, to)` from `packages/core/src/utils/repeat.ts:153` (exported
-  from `@1440/core`). It returns virtual occurrences with their *display* date (overrides
-  that moved an occurrence are already applied) and ids `<seriesId>:<date>`. Sort by
-  `date` then `startMinute`, group by date. `datesWithEvents()` (`:160`) gives the distinct
-  dates if you want day headers only for days that have blocks.
-- **Bound the range by the view, never by the rule.** A "forever" rule expands to as many
-  days as you ask for. Start with today → today + 14 days and a "SHOW MORE" footer that
-  extends by 14; `day.tsx:96` already does ±365 for the strip dots at acceptable cost
-  (PSS +27 MB with the month grid open in pass 8), so 14–60 days is nothing.
-- `today()`, `dateAddDays()`, `formatDateDisplay()` (`Sat, Sep 26`), `isToday()` are in
-  `packages/core/src/utils/dateHelpers.ts`; `minuteToTimeStr()` and `formatDuration()` in
-  `utils/time.ts:1,20`. Time is minutes from midnight — convert only in the row.
-- Colour: `CATEGORIES.find(c => c.id === ev.categoryId)` → `color` / `bg`, exactly as
-  `TodoRow.tsx:23` does. Badges: `isSeries(ev)` + `describeRepeat(ev.repeat)` for a series
-  occurrence (`BlockModal.tsx:283-287` renders that badge), `ev.fromTodo` for "☑ from tasks".
-- "Now" highlight: `useCurrentMinute()` (`@1440/core`) re-renders every 30 s;
-  `getCurrentMinute()` for the value. A block on today with `startMinute ≤ now <
-  startMinute + durationMinutes` is the current one.
+**Every `CATEGORIES.find()` site — each becomes a store lookup** (all `c => c.id ===
+x.categoryId`, all use `?.color` / `?.bg` / `?.label`):
+- `apps/mobile/src/app/day.tsx:56` (`pickCat`, the placement banner) and `:92` (`nextCat`,
+  the next-block countdown).
+- `apps/mobile/src/components/calendar/EventBlock.tsx:45` — the grid block itself.
+- `apps/mobile/src/components/schedule/ScheduleList.tsx:131` — the agenda row (pass 10).
+- `apps/mobile/src/components/tasks/TodoRow.tsx:23` — the task row chip.
+- `apps/mobile/src/components/ui/BlockModal.tsx:100` (new-block form) and `:261` (edit
+  sheet header dot + label).
+- `apps/mobile/src/app/watch.tsx:49` — the phone-side watch preview's block list.
+- `apps/mobile/src/components/watchface/EventArcs.tsx:17` — the SVG preview arcs.
+- `apps/mobile/src/services/watchSync.ts:54` — `buildWatchSnapshot` resolves `color` to a
+  hex string (`?? '#888'`) **at send time**; that is why the watch needs no change. Pass
+  the store's categories in (it is a pure function called from `_layout.tsx:92`).
+- `apps/web/src/App.jsx` has nine more `CATEGORIES.find` calls — the web prototype is
+  broken (0-byte entry files) and does not use `@1440/core`; **leave it alone**.
 
-**Row tap → Day on that date.** `useSettingsStore` holds `selectedDate` /
-`setSelectedDate` (`day.tsx:59-62` reads them); the Day grid scrolls to "now" on today
-and to midnight elsewhere on mount (pass-4 log). So a row tap is
-`setSelectedDate(occ.date); router.push('/day')`. **Do not** open `BlockModal` from the
-agenda: edit/delete-with-scope/undo plumbing lives in `day.tsx:100-160` and would have to
-be duplicated; navigating is the whole feature.
+**The picker and the typed state.**
+- `apps/mobile/src/components/ui/CategoryPicker.tsx:14` maps `CATEGORIES` and `:20` casts
+  `cat.id as CategoryId` — becomes a map over the store, no cast. Used by
+  `BlockModal.tsx:195` and `:342` (the edit sheet commits `{ categoryId: id }` straight
+  to the store) and `TodoSheet.tsx:191`.
+- `useState<CategoryId>('deep')` at `BlockModal.tsx:95`, `:233` (`event?.categoryId ??
+  'deep' as const`) and `TodoSheet.tsx:76` — with `CategoryId = string` these compile
+  unchanged, but the `'deep'` default should become "the first category in the store".
+
+**Where the store goes and how it hydrates.**
+- Stores are zustand + `persist` with an injectable `StateStorage`, pattern in
+  `packages/core/src/store/useSettingsStore.ts` (`NOOP_STORAGE`, `init…Storage(adapter)`
+  calling `persist.setOptions` + `rehydrate()`, `skipHydration: true`, explicit
+  `partialize`). Copy that shape for `useCategoryStore` (`1440-planner-categories-v1`).
+  Export it and `initCategoryStorage` from `packages/core/src/index.ts:21-24`.
+- The phone injects adapters in `apps/mobile/src/services/storage.ts` (`initAllStores()`,
+  called at `_layout.tsx:38`) and gates rendering on **all three** stores' `persist.
+  hasHydrated()` at `_layout.tsx:55-72`. **Add the fourth store to both**, or the app
+  renders before categories exist and every chip is blank on cold start.
+- Seed: if the persisted list is empty after hydration, write the five built-ins. Do it
+  in the store's `onRehydrateStorage` or right after `rehydrate()` — not in a component.
+- **No dynamic `import()` in `packages/core`** (Metro rejects the split bundle for a
+  path outside `apps/mobile`); static imports only, and there are no cycles between the
+  stores.
+
+**Time ranges.** Today's single window is `wakeMinute` / `sleepMinute` in
+`useSettingsStore` (defaults 360 / 1320), edited in `apps/mobile/src/app/settings.tsx:120-124`
+via `MinuteInput` (`components/ui/`, built on `NumericField` — reuse it), read by
+`day.tsx:81` for the free-time stat and by `DayGrid.tsx:79` for the shading outside the
+window (the shading views must stay `pointerEvents="none"`, `CLAUDE.md` → Conventions).
+`buildWatchSnapshot` (`watchSync.ts:31`) also carries wake/sleep — leave that as is. A category's range is
+`startMinute?` / `endMinute?` in minutes from midnight (0–1439, `CLAUDE.md`); store it on
+the category, show it in the Settings list, and — as the visible payoff — draw each range
+as a faint band in that category's colour in the grid's ruler or shading layer. Keep
+wake/sleep as they are; the ranges are additive in this pass.
+
+**Deletion policy — decide before coding, record it under Decisions on record.**
+Recommended: DELETE on a category with blocks/todos asks to **reassign** them to another
+category (a chip row in the same sheet), and the lookup helper still falls back to a
+neutral `{ label: 'Uncategorised', color: C.L3, bg: … }` for any id it cannot find, so a
+stray id from an old backup never renders as `undefined`. Rejected alternatives to note:
+cascading delete of blocks (destroys data), and refusing to delete a category in use
+(keeps the user in a corner).
+
+**Where the UI goes.** Settings (`apps/mobile/src/app/settings.tsx`, reachable via the
+gear on Day) gains a CATEGORIES section: the list with colour dot, label, range; tap →
+a sheet (the `TodoSheet` pattern: Modal + backdrop + `Animated` slide + `ScrollView`)
+with LABEL, COLOUR (a palette of ~10 swatches is enough — no colour wheel), FROM / TO
+(`MinuteInput`), DELETE with the two-tap guard from pass 9. `+ CATEGORY` at the top.
 
 **Traps that are still live** (`CLAUDE.md`):
-- **Never filter `useCalendarStore.events` by date yourself.**
-- **No dynamic `import()` in `packages/core`** (you should not be touching core anyway).
-- `DESIGN_TOKENS` stays in `packages/core/src/types/event.ts`; no new `theme.ts`, no hex
-  literals in the new component (the `#34D399` greens in `TodoRow.tsx` are Known debt —
-  do not copy them; use `C.cyan` / `C.amber` / category colours).
-- Touch targets inside `DayGrid`'s long-press `Pressable` stay `pointerEvents="none"`
-  (not relevant unless you touch `DayGrid`).
-- **Fast Refresh applies edits to the running app.** Data setup on the old code first.
-- `SafeAreaView edges={['top']}` wraps `<Slot/>` in `_layout.tsx` (pass 7) — the new
-  screen needs no inset handling of its own; `tasks.tsx` has none.
+- **Never filter `useCalendarStore.events` by date yourself** — `eventsOnDate()` /
+  `eventsInRange()` only.
+- `DESIGN_TOKENS` stays in `packages/core/src/types/event.ts`; no `theme.ts`; no hex
+  literals in components. The colour *palette* for the swatches is a legitimate new
+  const next to `DESIGN_TOKENS` (it is design data, not a token dump).
+- `tsc` can fail on `.expo/types/router.d.ts` after creating files outside `src/app`
+  while Metro runs — restart Metro, re-run. (Did not trigger in passes 8–10; still real.)
+- **Fast Refresh applies `apps/mobile` edits to the running app immediately; core edits
+  need force-stop + relaunch.** Data setup on the old code first.
+- The sheets' `KeyboardAvoidingView behavior={undefined}` on Android means a low field is
+  covered while the keyboard is up (Known debt) — put LABEL first in the new sheet.
 
 ## Constraints
 
-- Pass 10 is the Schedule view only. **No categories, no watch rings, no core changes.**
-- JS-only. Do not touch `watch/android-wearos`.
+- Pass 11 is Categories only. **No watch face work, no rings** (#12 / #12a wait).
+- `CategoryId = string`; the five built-in ids survive unchanged so no persisted row
+  migrates. The calendar store's `version` stays 2.
+- Every `CATEGORIES.find` site above goes through one shared lookup with the fallback;
+  grep for `CATEGORIES` at the end — the only remaining reference should be the seed.
 - Dark mode only; tokens from `DESIGN_TOKENS`.
-- Keep the list bounded and cheap: `eventsInRange` once per render over the visible range,
-  memoised on `[events, from, to]`.
 
 ## Verification (required)
 
-1. `adb devices` lists the phone (watch optional).
-2. **SCHEDULE tab** appears fourth in the bar and opens the list. Today's header first;
-   `MigSeries` shows **on Sep 26 only** — its `count: 4` from 09-25 with 27/28 excepted
-   means no later occurrence (if the session runs after 09-26, it shows on no day; say so).
-   `RepPick`'s and `PickTest`'s blocks show with "☑ from tasks".
-3. **A forever rule stays bounded**: `+ BLOCK` → REPEAT Daily (Never) → SCHEDULE shows it
-   under every day of the window, SHOW MORE extends by 14 days and it keeps appearing;
-   `adb shell dumpsys meminfo com.planner1440.app | findstr "TOTAL PSS"` before/after stays
-   within tens of MB. Delete it (WHOLE SERIES) afterwards.
-4. **Row tap** → Day on that date (`dumpsys` not needed: the date strip highlights it;
-   screenshot). Tap a row on today → Day on today, grid on "now".
-5. **Nothing regressed**: cold start → Day 3×; Tasks → PICK flow (pass 4 recipe); the
-   pass-9 `NumEdit` todo still reads `↺ daily · forever` and checks per date; the
-   notification log line does not repeat in a 2-minute quiet window.
-6. `npx tsc --noEmit -p apps/mobile` and `-p packages/core` clean; `npx expo-doctor` 21/21.
+1. `adb devices` lists the phone.
+2. **Cold start with the old persisted data** → the five built-in categories appear in
+   Settings, every existing block and todo keeps its chip colour and label (screenshot
+   Day on 09-28 and SCHEDULE before and after — identical).
+3. **Add** `Gym` (new colour, range 17:00–19:00) → `+ BLOCK` shows it in the picker →
+   a block with it renders in that colour on Day, SCHEDULE, the WATCH preview and the
+   task chip (place a todo with it). Store row in `1440-planner-categories-v1` via the
+   `RKStorage` recipe; survives `am force-stop` + relaunch.
+4. **Edit** `Gym`'s colour → every surface follows without a restart. **Delete** `Gym`
+   with one block on it → the reassign prompt → block now shows the chosen category;
+   `categoryId` in the calendar store row updated.
+5. **Watch snapshot carries the new hex**: phone logcat `1440:WatchSync putDataItem ok`
+   after step 3, and either the watch's `shared_prefs/1440_watch.xml` (`run-as` recipe)
+   or a `console.log` of the snapshot shows the block with `Gym`'s colour, not `#888`.
+6. **Nothing regressed**: cold start → Day 3×; Tasks → PICK flow; SCHEDULE still lists
+   `Daily Huddle` with the Meeting chip; the notification log line does not repeat in a
+   2-minute quiet window.
+7. `npx tsc --noEmit -p apps/mobile` and `-p packages/core` clean; `npx expo-doctor` 21/21.
 
 ## Wrap-up
 
-- Conventional Commits: `feat(schedule): agenda list of blocks across days`, `docs:
-  pass-10 …`.
+- Conventional Commits: `feat(core): category store with time ranges, CategoryId is a
+  string`, `feat(categories): add / edit / delete categories in Settings`, `docs: pass-11
+  …`.
 - Push, open the PR through the GitHub API (no `gh`; recipe in the memory note), **do not
-  merge**. Say which branch you stacked on. PR description: the range/bounding decision,
-  what a row tap does, verification with screenshots and the PSS numbers, anything left.
-- `docs/STATUS.md`: TL;DR PR count and open branches; ✅ Working → a Schedule bullet;
-  strike item 10 from "Next up"; pass-10 log entry; replace this section with **the
-  pass-11 handoff — Categories** (Next up #11: add/edit/delete categories with per-category
-  time ranges; `CategoryId` is a TS union and `CATEGORIES` a frozen const in
-  `packages/core/src/types/event.ts:3-18`, so it means a new persisted store, `id:
-  string`, every `CATEGORIES.find()` rewritten, and a policy for blocks whose category was
-  deleted — cite each `CATEGORIES.find` site with file and line).
-- **Print the pass-11 handoff prompt in full in the chat too**, in one fenced block, as the
-  last thing in the session (`CLAUDE.md` → Session workflow).
+  merge**. Say which branch you stacked on. PR description: the deletion policy, the
+  fallback, what the ranges do today, verification with screenshots, anything left.
+- `docs/STATUS.md`: TL;DR PR count and open branches; ✅ Working → a Categories bullet;
+  strike item 11 from "Next up"; the deletion policy under Decisions on record; pass-11
+  log entry; replace this section with the **pass-12a handoff — watch block arcs** (the
+  spike first: does a full-face `SMALL_IMAGE` / `PHOTO_IMAGE` complication slot render
+  untinted on the Galaxy Watch 7; then a watch-side data source that draws the arcs
+  from the snapshot in `SharedPreferences` with `Canvas.drawArc`; cite
+  `watch/android-wearos/app` `DataLayerClient` and the generator
+  `tools/make-watchface.ps1`, and the Known-debt entries it closes).
+- **Print the pass-12a handoff prompt in full in the chat too**, in one fenced block, as
+  the last thing in the session (`CLAUDE.md` → Session workflow).
 - Update the `device-and-tooling` memory note: Metro PID, phone IP/pin state, disk, any
   new traps.
