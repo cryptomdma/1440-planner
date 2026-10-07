@@ -6,8 +6,8 @@ import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import type { PanGestureHandlerStateChangeEvent } from 'react-native-gesture-handler';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import {
-  CATEGORIES, DESIGN_TOKENS as C, MINUTES_IN_DAY,
-  useCalendarStore, useTodoStore, useSettingsStore,
+  DESIGN_TOKENS as C, MINUTES_IN_DAY,
+  useCalendarStore, useTodoStore, useSettingsStore, useCategory,
   useCurrentMinute, minuteToTimeStr, isToday,
   today, dateAddDays,
   eventsOnDate, datesWithEvents, parseOccurrenceId, findSeries,
@@ -53,7 +53,8 @@ export default function DayScreen() {
   const pickTodo  = typeof pick === 'string' && pick
     ? todos.find(t => t.id === pick && t.status === 'pending') ?? null
     : null;
-  const pickCat   = pickTodo ? CATEGORIES.find(c => c.id === pickTodo.categoryId) : null;
+  // Resolved unconditionally (hook order); only read while pickTodo is set.
+  const pickCat   = useCategory(pickTodo?.categoryId);
   const endPick   = useCallback(() => router.setParams({ pick: '' }), [router]);
 
   const { selectedDate, setSelectedDate, countMode, setCountMode, wakeMinute, sleepMinute, defaultDuration } =
@@ -89,7 +90,7 @@ export default function DayScreen() {
         .sort((a, b) => a.startMinute - b.startMinute)[0] ?? null
     : null;
   const minsUntilNext = nextEvent ? nextEvent.startMinute - currentMinute : null;
-  const nextCat       = nextEvent ? CATEGORIES.find(c => c.id === nextEvent.categoryId) : null;
+  const nextCat       = useCategory(nextEvent?.categoryId);
 
   const allDatesWithEvents = useMemo(() => {
     const t = today();
@@ -234,12 +235,12 @@ export default function DayScreen() {
 
       {/* Placement banner (Tasks → PICK): long-press a slot to place the todo there */}
       {pickTodo && (
-        <View style={[s.pickBar, { borderLeftColor: pickCat?.color ?? ac }]}>
+        <View style={[s.pickBar, { borderLeftColor: pickCat.color }]}>
           <View style={s.pickBody}>
             <Text style={s.pickLabel}>PLACING · LONG-PRESS A FREE SLOT</Text>
             <Text style={s.pickText} numberOfLines={1}>
-              <Text style={[s.pickTitle, { color: pickCat?.color ?? C.L1 }]}>{pickTodo.title}</Text>
-              <Text style={s.pickMeta}>{'  '}{pickTodo.durationMinutes}m · {pickCat?.label}</Text>
+              <Text style={[s.pickTitle, { color: pickCat.color }]}>{pickTodo.title}</Text>
+              <Text style={s.pickMeta}>{'  '}{pickTodo.durationMinutes}m · {pickCat.label}</Text>
             </Text>
           </View>
           <Pressable onPress={endPick} hitSlop={10} style={s.pickCancel}>
@@ -250,11 +251,11 @@ export default function DayScreen() {
 
       {/* Next-block countdown banner (today only, when a future block exists) */}
       {nextEvent && minsUntilNext !== null && (
-        <View style={[s.nextBar, { borderLeftColor: nextCat?.color ?? ac }]}>
+        <View style={[s.nextBar, { borderLeftColor: nextCat.color }]}>
           <Text style={s.nextText} numberOfLines={1}>
             <Text style={[s.nextMin, { color: ac }]}>in {minsUntilNext}m</Text>
             {'  ·  '}
-            <Text style={[s.nextTitle, { color: nextCat?.color ?? C.L1 }]}>{nextEvent.title}</Text>
+            <Text style={[s.nextTitle, { color: nextCat.color }]}>{nextEvent.title}</Text>
             <Text style={s.nextTime}>{'  '}{minuteToTimeStr(nextEvent.startMinute)}</Text>
           </Text>
         </View>

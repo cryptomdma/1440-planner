@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
-import type { CalendarEvent } from '@1440/core';
-import { CATEGORIES, eventsOnDate, minuteToTimeStr } from '@1440/core';
+import type { CalendarEvent, Category } from '@1440/core';
+import { eventsOnDate, minuteToTimeStr, resolveCategory } from '@1440/core';
 import WearableDataLayer from '../../modules/wearable-data-layer';
 
 export interface WatchSnapshot {
@@ -22,13 +22,16 @@ export interface WatchSnapshot {
 
 export function buildWatchSnapshot(params: {
   events:       CalendarEvent[];
+  // The category store's list. Colours are resolved to hex here, at send
+  // time, which is why the watch needs no notion of categories at all.
+  categories:   readonly Category[];
   date:         string;
   currentMinute: number;
   countMode:    'up' | 'down';
   wakeMinute:   number;
   sleepMinute:  number;
 }): WatchSnapshot {
-  const { events, date, currentMinute, countMode, wakeMinute, sleepMinute } = params;
+  const { events, categories, date, currentMinute, countMode, wakeMinute, sleepMinute } = params;
 
   // Expands repeat rules, so a repeating block shows up as current/next too.
   const dayEvents = eventsOnDate(events, date);
@@ -51,7 +54,7 @@ export function buildWatchSnapshot(params: {
       startMinute:    e.startMinute,
       durationMinutes: e.durationMinutes,
       categoryId:     e.categoryId,
-      color:          CATEGORIES.find(c => c.id === e.categoryId)?.color ?? '#888',
+      color:          resolveCategory(categories, e.categoryId).color,
     })),
     currentBlock: currentBlock
       ? { title: currentBlock.title, endsAt: currentBlock.startMinute + currentBlock.durationMinutes }

@@ -6,7 +6,7 @@ import { Slot, usePathname, useRouter, useRootNavigationState } from 'expo-route
 import * as Notifications from 'expo-notifications';
 import {
   DESIGN_TOKENS as C,
-  useCalendarStore, useSettingsStore, useTodoStore,
+  useCalendarStore, useSettingsStore, useTodoStore, useCategoryStore,
   useCurrentMinute, getCurrentMinute, today, eventsOnDate,
 } from '@1440/core';
 import type { CalendarEvent } from '@1440/core';
@@ -50,7 +50,9 @@ export default function RootLayout() {
   // Ticks every 30 s; the re-render is what lets `todayStr` below flip at midnight.
   useCurrentMinute();
 
-  // Hydration gate: wait for stores to rehydrate from AsyncStorage
+  // Hydration gate: wait for all four stores to rehydrate from AsyncStorage.
+  // Categories are in the gate too — rendering before they hydrate would
+  // paint every chip from the seed, then flip to the user's list.
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -59,7 +61,8 @@ export default function RootLayout() {
       const calHydrated      = useCalendarStore.persist.hasHydrated();
       const settingsHydrated = useSettingsStore.persist.hasHydrated();
       const todoHydrated     = useTodoStore.persist.hasHydrated();
-      if (calHydrated && settingsHydrated && todoHydrated) {
+      const categoryHydrated = useCategoryStore.persist.hasHydrated();
+      if (calHydrated && settingsHydrated && todoHydrated && categoryHydrated) {
         setHydrated(true);
       } else if (checks < 50) {
         checks++;
@@ -89,9 +92,11 @@ export default function RootLayout() {
     const send = () => {
       debounce = null;
       const { events } = useCalendarStore.getState();
+      const { categories } = useCategoryStore.getState();
       const { countMode, wakeMinute, sleepMinute } = useSettingsStore.getState();
       syncToWatch(buildWatchSnapshot({
         events,
+        categories,
         // The watch shows today, whichever day the phone is browsing.
         date:          today(),
         currentMinute: getCurrentMinute(),
@@ -117,6 +122,8 @@ export default function RootLayout() {
     startTimer();
 
     const unsubCalendar = useCalendarStore.subscribe(sendSoon);
+    // A recoloured or deleted category changes the hex the snapshot carries.
+    const unsubCategory = useCategoryStore.subscribe(sendSoon);
     const unsubSettings = useSettingsStore.subscribe((state, prev) => {
       if (state.countMode   !== prev.countMode
        || state.wakeMinute  !== prev.wakeMinute
@@ -133,6 +140,7 @@ export default function RootLayout() {
 
     return () => {
       unsubCalendar();
+      unsubCategory();
       unsubSettings();
       appState.remove();
       stopTimer();

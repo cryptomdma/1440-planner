@@ -4,9 +4,9 @@ import {
   StyleSheet, Animated, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import {
-  PRIORITIES, DESIGN_TOKENS as C, today, describeRepeat,
+  PRIORITIES, DESIGN_TOKENS as C, today, describeRepeat, useCategoryStore,
 } from '@1440/core';
-import type { Todo, Priority, CategoryId, RepeatConfig } from '@1440/core';
+import type { Todo, Priority, RepeatConfig } from '@1440/core';
 import { nanoid } from 'nanoid/non-secure';
 import NumericField    from '../ui/NumericField';
 import CategoryPicker  from '../ui/CategoryPicker';
@@ -73,7 +73,10 @@ function TodoForm(props: Props) {
   const [notes,      setNotes]      = useState(initial?.notes ?? '');
   const [duration,   setDuration]   = useState(initial?.durationMinutes ?? 30);
   const [priority,   setPriority]   = useState<Priority>(initial?.priority ?? 'med');
-  const [categoryId, setCategoryId] = useState<CategoryId>(initial?.categoryId ?? 'deep');
+  // A new task defaults to the first category in the store (the user's order).
+  const [categoryId, setCategoryId] = useState<string>(
+    () => initial?.categoryId ?? useCategoryStore.getState().categories[0]?.id ?? ''
+  );
   const [repeat,     setRepeat]     = useState<RepeatConfig>(initial?.repeat ?? BLANK_REPEAT);
   const [dueDate,    setDueDate]    = useState(initial?.dueDate ?? today());
   const [showRepeat, setShowRepeat] = useState(!!initial?.repeat && initial.repeat.mode !== 'none');

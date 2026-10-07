@@ -1,6 +1,6 @@
 # Project Status
 
-**Last updated: 2026-09-28** — read this first; it is the source of truth for project state.
+**Last updated: 2026-10-07** — read this first; it is the source of truth for project state.
 The other docs describe *intent*, and some of it predates what actually shipped.
 
 ---
@@ -28,11 +28,16 @@ its text and coerces on blur (the duration field can finally be cleared and type
 task opens in an edit sheet when its row is pressed, and todos can repeat — stored once,
 with completion recorded per date. **Pass 10 added the Schedule view:** a fourth tab
 listing every block from today forward, grouped by day, bounded by a 14-day window that
-SHOW MORE extends — a row tap opens that day on the Day screen. Nineteen PRs have merged,
-#19 among them (`6096689`); **four branches are open and stacked**: `chore/sdk-upgrade`
-(PR #20, pass 7), `feat/repeat-rules` (PR #21, passes 8 and 8.5, on #20), `feat/tasks-edit`
-(PR #22, pass 9, on #21) and `feat/schedule-view` (PR #23, pass 10, on #22). Merge in that
-order. The owner's feature backlog is staged as passes 11–13 under **Next up**.
+SHOW MORE extends — a row tap opens that day on the Day screen. **Pass 11 made categories
+user data:** a fourth persisted store seeded with the five built-ins, add / edit / delete
+from Settings (delete reassigns the category's blocks and tasks), one colour per category
+with the fill derived from it, an optional time range per category drawn as a band on the
+Day grid, and every lookup through one helper with a visible `Uncategorised` fallback.
+Nineteen PRs have merged, #19 among them (`6096689`); **five branches are open and
+stacked**: `chore/sdk-upgrade` (PR #20, pass 7), `feat/repeat-rules` (PR #21, passes 8 and
+8.5, on #20), `feat/tasks-edit` (PR #22, pass 9, on #21), `feat/schedule-view` (PR #23,
+pass 10, on #22) and `feat/categories` (PR #24, pass 11, on #23). Merge in that order. The
+owner's feature backlog is staged as passes 12–13 under **Next up**.
 
 ---
 
@@ -40,14 +45,19 @@ order. The owner's feature backlog is staged as passes 11–13 under **Next up**
 
 **`packages/core` (`@1440/core`)** — platform-agnostic
 - Types: `CalendarEvent`, `Todo`, `RepeatConfig` (+ `exceptions`/`overrides`, `SeriesScope`),
-  `CATEGORIES`, `PRIORITIES`, `DESIGN_TOKENS`
+  `Category` / `ResolvedCategory` (`CategoryId` is a plain `string` since pass 11),
+  `CATEGORY_PALETTE`, `PRIORITIES`, `DESIGN_TOKENS`
 - Utils: `computeLayout`, `findNextFreeSlot`, `autoScheduleQueue`, time/date helpers, and
   since pass 8 the repeat expansion in `utils/repeat.ts` — `eventsOnDate`, `datesWithEvents`,
   `expandSeries`, `occurrenceId`/`parseOccurrenceId`, `describeRepeat`,
-  `migrateMaterialisedSeries`
-- Three zustand stores persisted via an injectable `StateStorage` adapter
-  (keys `1440-planner-{calendar,todos,settings}-v1`; the calendar store is at **`version: 2`**
-  with a `migrate()` that folds pre-pass-8 materialised repeat rows back into base + rule)
+  `migrateMaterialisedSeries`; since pass 11 `utils/category.ts` — `resolveCategory`
+  (fallback `UNCATEGORISED`), `categoryBg`, `hasRange`, `describeRange`, `countCategoryUse`
+  — and the hooks `useCategory(id)` / `useCategories()`
+- Four zustand stores persisted via an injectable `StateStorage` adapter
+  (keys `1440-planner-{calendar,todos,settings,categories}-v1`; the calendar store is at
+  **`version: 2`** with a `migrate()` that folds pre-pass-8 materialised repeat rows back
+  into base + rule; the category store seeds the five built-ins as its initial state and
+  the row only appears in AsyncStorage after the first edit)
 
 **`apps/mobile`** — Expo SDK 57 (React 19.2.3, RN 0.86.3, expo-router 57, New Architecture
 on), four tabs
@@ -93,8 +103,23 @@ on), four tabs
   snapshot is always **today's**, whichever day the phone is browsing. Verified on the
   Galaxy Watch 7: phone `putDataItem` → watch `DataLayerClient.onDataChanged` in 3.5–4 s,
   complications refreshed via `requestUpdateAll()`.
+- **Categories (pass 11)** — `useCategoryStore` (`packages/core/src/store/useCategoryStore.ts`)
+  holds the list; the five built-in ids are its seed, so every existing block and todo row
+  kept working unchanged. Settings → CATEGORIES lists them (dot, label, range) with
+  `+ CATEGORY`; a row opens `components/ui/CategorySheet.tsx`: LABEL, a 12-swatch COLOUR
+  palette with a live chip preview (`bg` is derived at 0.18 alpha — one colour per
+  category), TIME RANGE off / FROM–TO (`MinuteInput`, ≥ 15 min apart), SAVE, and a two-tap
+  DELETE that, when the category is in use, first shows `MOVE n BLOCKS AND m TASKS TO` with
+  a chip per other category (Decisions on record). The last category cannot be deleted.
+  Every surface resolves ids through `useCategory()` — grid block, agenda row, task chip,
+  pickers, edit-sheet header, Day banners, watch preview arcs — and an id nothing matches
+  renders as grey `Uncategorised`. A category's range is drawn on the Day grid as a faint
+  wash in its colour plus a 3 px strip at the far-left edge of the ruler
+  (`DayGrid.tsx`, `pointerEvents="none"` like the wake/sleep shade). The watch snapshot
+  resolves hex from the store at send time and re-sends when the store changes.
 - **Settings** — count mode, default duration, auto-schedule buffer, notification lead time,
-  wake/sleep minutes (reachable only via the gear on the Day screen, not the tab bar)
+  wake/sleep minutes, categories (reachable only via the gear on the Day screen, not the
+  tab bar)
 - **Local notifications** — one reminder per block on *today*, fired `leadTimeMinutes`
   before the block starts (Settings → NOTIFICATION LEAD TIME, default 15m). Rescheduled
   on today-only calendar changes, lead-time changes, foreground, and midnight rollover;
@@ -300,6 +325,21 @@ a `packages/core/src/theme.ts` that was deliberately not created (see `DESIGN_TO
   to an occurrence id. Rejected: one row per outstanding rule date ≤ today (a forgotten
   daily todo becomes a wall of overdue rows), and per-date link records (a second map to
   keep consistent, for a case the block-delete unlink already handles).
+- **Deleting a category reassigns its blocks and todos; an unknown id renders as
+  `Uncategorised`** (decided 2026-10-07, pass 11). `CategoryId` became a plain `string`
+  and the five built-in ids are the store's seed, so no persisted row migrated and the
+  calendar store stayed at `version: 2`. DELETE on a category that is in use shows a chip
+  row of the other categories and moves every base event, every per-occurrence override
+  and every todo on it to the chosen one (`reassignCategory` on the calendar and todo
+  stores, called from `useCategoryStore.deleteCategory`) before removing it; a category
+  that is not in use deletes on the second tap directly; the last category cannot be
+  deleted. Independently, `resolveCategory()` / `useCategory()` fall back to
+  `UNCATEGORISED` (`label: 'Uncategorised'`, `color: L3`) for any id they cannot find, so a
+  stray id from an old backup never renders as `undefined`. Rejected: cascading delete of
+  the blocks (destroys data for a cosmetic action) and refusing to delete a category in
+  use (corners the user into deleting blocks one by one first). One colour per category —
+  `bg` is derived at 0.18 alpha rather than stored — so the fill/stroke relationship
+  `DESIGN_TOKENS.md` describes cannot drift.
 - **No `packages/core/src/theme.ts`.** `DESIGN_TOKENS` stays in `types/event.ts` so the
   palette has exactly one home. Overrides `CLAUDE_CODE_HANDOFF.md:566`.
 - **Expo Go is still not the path, for a new reason.** The SDK 51 pin that ruled it out is
@@ -332,15 +372,18 @@ where adding the category ring later is a few more calls rather than a rebuild.
 10. ~~**Schedule view.**~~ **Done in pass 10** (PR #23) — SCHEDULE tab, agenda grouped by
     day over a view-bounded window (today + 14, SHOW MORE), row tap → Day on that date.
     No core changes.
-11. **Categories.** Add/delete/edit, plus per-category time ranges (`Personal 06:00–12:00`,
-    `Work 12:00–18:00`, …) generalising today's single wake/sleep window. **The heavy
-    one:** `CategoryId` is a TS union and `CATEGORIES` a frozen const in
-    `types/event.ts:3-18`, so this means a new persisted store, `id: string`, every
-    `CATEGORIES.find()` rewritten, and a policy for blocks whose category was deleted.
-    The watch is safe — `buildWatchSnapshot` already resolves colours to hex at send time.
+11. ~~**Categories.**~~ **Done in pass 11** (PR #24) — persisted category store seeded with
+    the built-ins, `CategoryId = string`, add / edit / delete in Settings with reassign on
+    delete, derived `bg`, per-category time ranges drawn as bands on the Day grid, one
+    lookup helper with an `Uncategorised` fallback (Decisions on record). The watch needed
+    no change. The ranges are display-only today — they shade, they do not constrain
+    placement or AUTO.
 12. **Watch face rings** — the per-block arcs Known debt, in the owner's two-ring form:
     a thin outer ring for category time ranges, thicker inner rings for actual blocks.
-    The *category* ring needs 11; the block arcs do not — see 12a.
+    The *category* ring's data now exists (11 is done: `startMinute`/`endMinute` on each
+    category, colour resolved on the phone) but the snapshot does not carry it yet — add a
+    `ranges: [{startMinute, endMinute, color}]` array to `WatchSnapshot` when 12a's
+    renderer is in place.
 12a. **Watch block arcs** (new after pass 8.5; can be done any time, does not need 11).
     Render today's blocks as coloured arcs on the real face. WFF cannot draw them, so:
     a new complication data source on the *watch* draws the arcs onto a `Bitmap` with
@@ -381,6 +424,106 @@ Not staged, deliberately:
 ---
 
 ## Session log
+
+### 2026-10-07 — Pass 11: Categories — a persisted store, add / edit / delete, time ranges (PR #24, open, stacked on #23)
+Branch `feat/categories`, **branched from `feat/schedule-view` (`f75661e`), not `main`** —
+`main` was still at #19 (`6096689`) with #20–#23 open, so #24 carries all four and merges
+last. JS-only (the new store is still JS), so no native build; the phone's app is still the
+pass-7 install. **A new Metro** (node PID 33668, not the 61684 / 16188 earlier handoffs
+named) was already on :8081 from the owner's morning session and was reused. Phone on
+`192.168.1.107:5555` and watch on `192.168.1.68:5555`, both pinned that morning (memory
+note). Disk **2.04 GB free at the start, 0.53 GB mid-session, 22.5 GB at the end** — the
+owner was running an installer (WinGet + Inno Setup temp dirs appeared at 05:34) and then
+cleared space; nothing this pass wrote, and Metro coped, but a native build during the dip
+would not have.
+
+**What shipped.** `CategoryId` is a plain `string` (`packages/core/src/types/event.ts`);
+`Category` is `{ id, label, color, startMinute?, endMinute? }` with `bg` **derived** by
+`categoryBg()` (0.18 alpha) and returned on `ResolvedCategory`. The five built-ins stay in
+`CATEGORIES` as the **seed only** — not exported from the barrel. New
+`store/useCategoryStore.ts` (`1440-planner-categories-v1`, `partialize`, `skipHydration`,
+`initCategoryStorage`): `addCategory`, `updateCategory` (drops an orphaned half-range),
+`deleteCategory(id, reassignTo)` which calls the new `reassignCategory(from, to)` on the
+calendar store (base rows **and** per-occurrence overrides) and the todo store before
+removing the row, and refuses to delete the last category. The seed is the store's initial
+state and `onRehydrateStorage` re-seeds an empty persisted list, so the hydration gate never
+sees a blank list. `utils/category.ts`: `resolveCategory` / `resolveCategories` (fallback
+`UNCATEGORISED`, grey `L3`), `hasRange`, `describeRange`, `countCategoryUse`;
+`hooks/useCategory.ts`: `useCategory(id)` / `useCategories()` (select the stable array,
+resolve in a memo). The phone: `storage.ts` injects the fourth adapter and `_layout.tsx`
+gates on its `hasHydrated()`, passes `categories` into `buildWatchSnapshot` and re-sends
+on category-store changes. All ten `CATEGORIES.find` sites now go through the hook —
+`day.tsx` (pick banner, next-block banner), `EventBlock`, `ScheduleList`, `TodoRow`,
+`BlockModal` (both forms; the new-block default is the store's first category),
+`watch.tsx`, `EventArcs`, `watchSync.ts`, `CategoryPicker` (maps the store, no cast),
+`TodoSheet` (default = first category). `DayGrid` draws every ranged category as a faint
+wash plus a 3 px strip at the far-left edge, `pointerEvents="none"`. Settings gained the
+CATEGORIES section and `components/ui/CategorySheet.tsx` (TodoSheet shell): LABEL first,
+12-swatch `CATEGORY_PALETTE` with a live chip preview, TIME RANGE `NONE` / `SET A RANGE`
+with FROM / TO `MinuteInput`s clamped ≥ 15 min apart, ADD / SAVE, and the two-tap delete
+with the reassign chip row (Decisions on record). `CLAUDE.md` and `DESIGN_TOKENS.md`
+updated for the new rule.
+
+**Verification on-device** (`192.168.1.107:5555`; screenshots in the PR)
+1. Phone listed; `adb reverse` already set (`host-14`). ✅
+2. Cold start on the old persisted data → Settings lists Deep Work / Meeting / Admin / Break /
+   Personal (`no range`); Day on 10-07 shows `Daily Huddle` in Meeting sky-blue with the
+   same `in 111m` banner as before; SCHEDULE identical (14 blocks, Meeting chips). ✅
+3. `+ CATEGORY` → `Gym`, rose `#FB7185`, range 1020–1140 → row `Gym · 5:00 PM – 7:00 PM`;
+   store row `{"id":"2wfNWlPh…","label":"Gym","color":"#FB7185","startMinute":1020,
+   "endMinute":1140}` in `1440-planner-categories-v1`. `+ BLOCK` picker shows Gym; a
+   `GymBlock` at 5:15 PM rendered rose on Day **inside the rose 5–7 PM band**, as a rose
+   `Gym` chip on SCHEDULE, as a rose arc and dot on WATCH, and `GymTask` showed a rose chip
+   on Tasks. Survived `am force-stop` + relaunch (Gym still listed with its range). ✅
+4. Edit → lime `#A3E635` → SAVE: SCHEDULE chip lime at once, store row updated. DELETE on
+   Gym (1 block, 1 task) → first tap revealed `MOVE 1 BLOCK AND 1 TASK TO` with five chips
+   and `TAP AGAIN · MOVE TO DEEP WORK & DELETE`; chose Break → button re-labelled → second
+   tap: Gym gone from Settings and the store, `GymBlock` row now `"categoryId":"break"`,
+   `GymTask` row `"categoryId":"break"` and its chip reads Break. ✅
+5. Watch snapshot: phone `1440:WatchSync putDataItem ok … (368 chars)` after the add, and
+   the watch's `shared_prefs/1440_watch.xml` (`run-as`) carried
+   `{"startMinute":1035,…,"categoryId":"2wfNWlPh…","color":"#FB7185"}`, then `#A3E635`
+   after the recolour. The watch had gone offline once early (its screen slept between
+   `connect` and the wake command) and came back on its own; timeout held at 1800000 for
+   the rest of the session. ✅
+6. Nothing regressed: cold start → Day **3/3**; Tasks → PICK on `GymTask` → banner → long-press
+   at 6:15 AM placed a Break-green `GymTask ☑` block; SCHEDULE still lists `Daily Huddle`
+   with the Meeting chip; notification quiet window — see the line under *Found on the
+   way*. All test data deleted afterwards (both blocks via the sheet, the task via ✕). ✅
+7. `tsc --noEmit` clean on both projects (no typed-routes trip). `expo-doctor` **20/21**:
+   the one failure is *"5 packages out of date"* — `expo` 57.0.25 → ~57.0.27,
+   `expo-constants`, `expo-linking`, `expo-notifications`, `expo-router` one patch each —
+   upstream patch releases since 09-28, nothing this pass added. Left alone: `expo install
+   --check` may touch native code and the disk was at 0.5 GB. ⚠️
+
+**Found on the way**
+- **zustand `persist` writes nothing on a first hydration that finds no stored value**
+  (`node_modules/zustand/middleware.js` → `if (migrated) return setItem()`), so a store
+  whose initial state is its seed has **no row in AsyncStorage until the first edit**.
+  Harmless here (the seed *is* the initial state); do not read "row missing" as "not
+  hydrated".
+- `expo-doctor` is 20/21 for reasons outside the repo (above). Expect the next pass to see
+  the same until the owner runs `npx expo install --check` on a day with disk to spare.
+- PowerShell: a helper named `Type` is shadowed by the `type` alias (aliases beat
+  functions). The scratch `adb.ps1` helper is `Typ` now.
+- `TextInput autoFocus` in the new sheet did not raise the keyboard on one open of two;
+  tap the field before typing over adb (`Kbd` says `mInputShown=true`).
+- The Settings `✕` → `+ BLOCK` tap pair raced the route transition once and the second tap
+  hit the date strip (Day landed on Oct 6). Wait a second after closing Settings.
+- The notification quiet window: **zero** `[notifications]` lines from 05:52:52 to 05:56:50
+  with the app idle on Day after the cleanup, while the watch resync fired at :54:32,
+  :55:32 and :56:32 as it should. (A grep for `notify(` also matches Samsung's
+  `SatelliteController …AndNotify(` spam — filter on `[notifications]`.)
+
+**Not done / caveats**
+- Ranges are **display-only**: they shade the Day grid and show in Settings; they do not
+  constrain placement, AUTO, or the free-time stat, and they are not in the watch snapshot
+  (Next up #12 names the field to add).
+- No undo for a category delete (the reassign is the safety net), no reordering (store order
+  = picker order = Settings order), no colour wheel (12 swatches), no per-category default
+  duration. A deleted category's colour is gone from its blocks by design — they take the
+  target's.
+- `expo-doctor` 20/21 (above). No test data left on the phone from this pass.
 
 ### 2026-09-28 — Pass 10: Schedule view — agenda of blocks across days (PR #23, open, stacked on #22)
 Branch `feat/schedule-view`, **branched from `feat/tasks-edit` (`c21d81a`), not `main`** —
@@ -1287,216 +1430,181 @@ confirmed afterwards that `npx expo run:android` builds and launches on a physic
 
 ---
 
-## 🤝 Handoff prompt (pass 11)
+## 🤝 Handoff prompt (pass 12a)
 
 > Standing rule (`CLAUDE.md` → Session workflow): every session ends by replacing this
 > section with the *next* session's prompt, in this format. Paste the block below as the
 > opening message of the next session.
 
-# 1440 Planner — Pass 11: Categories (add / edit / delete, per-category time ranges)
+# 1440 Planner — Pass 12a: block arcs on the real watch face (spike, then renderer)
 
-Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-09-28.
+Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-10-07.
 
-**Branching — four PRs are open and stacked.** #20 `chore/sdk-upgrade` (pass 7) ← #21
+**Branching — five PRs are open and stacked.** #20 `chore/sdk-upgrade` (pass 7) ← #21
 `feat/repeat-rules` (passes 8, 8.5) ← #22 `feat/tasks-edit` (pass 9) ← #23
-`feat/schedule-view` (pass 10). #19 is merged. Check `git log origin/main --oneline | head`
-after `git fetch`:
-- All four merged → `git checkout main; git pull; git checkout -b feat/categories`.
-- #23 not merged → branch from `feat/schedule-view` and **say so in the PR**, as passes
-  7–10 did.
+`feat/schedule-view` (pass 10) ← #24 `feat/categories` (pass 11). #19 is merged. Check
+`git log origin/main --oneline | head` after `git fetch`:
+- All five merged → `git checkout main; git pull; git checkout -b feat/watch-arcs`.
+- #24 not merged → branch from `feat/categories` and **say so in the PR**, as passes 7–11
+  did. (This pass is watch-only, so it does not actually depend on #24's code — but keep
+  the stack linear so the owner merges in order.)
 Do not merge anything yourself (`CLAUDE.md` → Git workflow); the repo owner merges.
 
-The memory note `device-and-tooling` holds the phone serial, adb path, the `:5555`
-recipe, the store-reading recipe (`exec-out run-as … cat databases/RKStorage` via `cmd`),
-the unfiltered-logcat recipe, the `uiautomator dump` → regex → tap recipe, the new
-four-tab coordinates, and how to open a PR without `gh`. It is loaded into your context;
-use it.
+The memory note `device-and-tooling` holds the watch's `:5555` pin, the wake / screen
+timeout recipe, the face-picker and `DEBUG_SURFACE` broadcasts, the `run-as` prefs read,
+the screenshot-zoom recipe and how to open a PR without `gh`. It is loaded into your
+context; use it.
 
-**Pass 10 is fully verified — nothing Schedule-side is owed.** Two staged alternatives if
-the owner would rather: **#12a** (block arcs on the real watch face) and **#13** (12/24-hour
-clock setting). Either swaps in for this prompt's Goal and Findings; the rest still applies.
+**Pass 11 is fully verified — nothing Categories-side is owed.** Alternative if the owner
+would rather: **#13** (12/24-hour clock setting). It swaps in for this prompt's Goal and
+Findings; the rest still applies.
 
 ## Prerequisites — check before writing anything
 
-1. **Disk.** 2.07 GB free on C: at the start of pass 10. Pass 11 is JS-only (a new
-   zustand store in `packages/core` is still JS), so Metro is all you need, but check
-   `(Get-PSDrive C).Free` early and **ask the owner to clear space before any native
-   build** — a phone rebuild needs several GB and fails at `mergeDebugNativeLibs` with a
-   message that never mentions disk.
-2. **Metro.** The pass-7 `expo start` (node PID **61684**) was still on :8081 at the end of
-   pass 10 — `Get-NetTCPConnection -LocalPort 8081 -State Listen`. Reuse it: it bundles
-   from disk, so `am force-stop` + relaunch picks up edits. **A `packages/core` change
-   needs the force-stop + relaunch, not Fast Refresh alone** (pass 9). Do any "old build"
-   data setup before editing code. If Metro is gone, `npm run mobile` from the repo root.
-3. **Phone** `R5CY72XEJKD`: it was on **`192.168.1.101:5555`** at the end of pass 10 (it
-   moves: `.91` → `.97` → `.101` across passes, and the pin dies with each reboot). Try
-   `adb connect 192.168.1.101:5555`; if `adb devices` instead shows it on some other
-   `ip:port`, re-pin with `adb -s <ip>:<port> tcpip 5555` over that link, then connect on
-   `:5555`. Re-issue `adb -s <dev> reverse tcp:8081 tcp:8081`. Check `dumpsys window |
-   findstr mCurrentFocus` before every tap sequence — the owner uses the phone
-   mid-session and **has real data on it now** (`Daily Huddle`, a daily · forever series;
-   `Kids`, `Cards`). Never delete or edit those; test with your own blocks. Tab bar since
-   pass 10: DAY (180, 2975), WATCH (540, 2975), TASKS (900, 2975), SCHEDULE (1260, 2975).
-   To open a block's edit sheet tap its vertical middle, not its title (pass 10), and
-   confirm the sheet is up (`TITLE` in the dump) before swiping it.
-4. **Watch** — needed only for the one snapshot check in Verification step 5, and it can
-   be done from the phone-side logcat instead. If you do connect: `adb connect
-   192.168.1.68:5555`; the moment it connects, `input keyevent KEYCODE_WAKEUP` and
-   `settings put system screen_off_timeout 1800000`, and put `60000` back at the end. A
-   watch that has slept is unrecoverable over adb (pass 8.5).
-5. SDK 57, New Architecture on, `npx expo-doctor` 21/21 — keep it that way.
+1. **Disk.** 22.5 GB free on C: at the end of pass 11 — but it was 0.5 GB an hour earlier
+   while the owner ran an installer, so it moves. The watch Gradle build is small (~10 s
+   warm, ~1 min cold; `watch/android-wearos/`), but check `(Get-PSDrive C).Free` first and
+   **ask the owner to clear space if it is under 1 GB** — a disk-full adb server refuses to
+   start, and that ends the session.
+2. **Phone is not needed.** The snapshot the watch already holds carries every block's
+   `startMinute`, `durationMinutes` and resolved hex `color`
+   (`apps/mobile/src/services/watchSync.ts:13-18`). Leave Metro (node PID 33668 on :8081,
+   if still up) alone. If you do want fresh data on the wrist, the phone was on
+   `192.168.1.107:5555`; `adb reverse tcp:8081 tcp:8081` after any reconnect.
+3. **Watch** `192.168.1.68:5555`: `adb connect`, then **the moment it connects** run
+   `input keyevent KEYCODE_WAKEUP` and `settings put system screen_off_timeout 1800000`
+   (put `60000` back at the end). Pass 11 lost it once between `connect` and the wake
+   command — chain the three in one PowerShell call. A watch that has slept is
+   unrecoverable over adb (pass 8.5); do not leave it idle between build cycles.
+   `screen_off_timeout` was put back to **60000** at the end of pass 11 (it took a
+   disconnect / connect retry loop to get back in — the watch slept twice that session).
+4. Watch build: `cd watch\android-wearos; .\gradlew :app:assembleDebug :wff:assembleDebug`
+   (JDK comes from Android Studio's JBR via `gradle.properties`); install both APKs with
+   `adb -s <watch> install -r`; force a face reload with the two `DEBUG_SURFACE` broadcasts
+   (away to UltraInfoBoard, back to `com.planner1440.wff`). Round trip ≈ 90 s.
+5. Capture watch logcat **unfiltered** (`-v time` to a file; `-s` cannot filter colon tags)
+   and grep `1440:|DWF:`. `[11:…]` / `[12:…]` lines are the existing slots.
 
 ## Goal
 
-**Next up #11 — Categories**: the user can add, edit (label, colour) and delete
-categories, and give each an optional **time range** (`Personal 06:00–12:00`, `Work
-12:00–18:00`, …) that generalises today's single wake/sleep window. Every place that
-looks a category up by id keeps working for the five built-in ids *and* for user ids, and
-a block whose category was deleted has a defined, visible fate. **This is the heavy one:**
-`CategoryId` is a TS string union and `CATEGORIES` a frozen const, so it means a new
-persisted store, `id: string`, every lookup rewritten, and a deletion policy. The watch
-face is unaffected by design (colours are resolved to hex at send time).
+**Next up #12a — block arcs on the real face.** Today's blocks as coloured arcs on the
+Galaxy Watch 7's WFF face, in the colours the phone resolved. Watch Face Format has no
+loop, so the arcs are **drawn on the watch into a bitmap** by a new complication data
+source (`Canvas.drawArc` over the snapshot in `SharedPreferences`) and shown through a
+**full-face image complication slot** behind the hand. Two steps, in order:
+1. **The spike** (do first, stop and report if it fails): does a `SMALL_IMAGE` (or
+   `PHOTO_IMAGE`) slot sized to the whole face render the source's bitmap **untinted and at
+   full size** on this runtime? Put a static test bitmap with three arcs in three obviously
+   different colours in it and screenshot. If the runtime tints or letterboxes, try
+   `PHOTO_IMAGE` (Wear spec says photos are never tinted), then `SMALL_IMAGE` with
+   `SmallImageType.PHOTO`. If none renders untinted, write that down under Known debt and
+   switch to #13.
+2. **The renderer**: the same source reading the real snapshot, redrawn on every
+   `requestUpdateAll()` the Data Layer push triggers.
 
 ## Findings — do not re-derive
 
-**The type and the const.**
-- `packages/core/src/types/event.ts:3` — `export type CategoryId = 'deep' | 'meeting' |
-  'admin' | 'break' | 'personal'`; `:5-10` `Category { id: CategoryId; label; color; bg }`;
-  `:12-18` `CATEGORIES: Category[]` with the five entries (`bg` is the colour at 0.18
-  alpha — derive it from `color` in the new model so a user picks one colour, not two);
-  `:46` `CalendarEvent.categoryId: CategoryId`. `packages/core/src/types/todo.ts:11`
-  `Todo.categoryId: CategoryId`. Both are re-exported from `packages/core/src/index.ts:3-4`.
-- **Make `CategoryId = string`** and keep the five built-in ids as the seed, so no event
-  or todo row needs migrating (persisted stores are `1440-planner-{calendar,todos,
-  settings}-v1`; the calendar store is at `version: 2` — do not bump it for this).
+**Where the data is and how refresh works.**
+- `watch/android-wearos/app/src/main/java/com/planner1440/watchface/DataLayerClient.kt:68-77`
+  writes the JSON to prefs `1440_watch` / key `snapshot` and calls `requestUpdateAll()` on
+  every class in `COMPLICATION_SERVICES` (`:38-43`). **Add the new service to that list** or
+  the arcs only refresh on the platform's ~300 s clamp.
+- `ComplicationHelper.kt:38-42` — `Context.snapshot(): JSONObject?` is the one reader;
+  `:121-151` (`NextBlockComplicationService`) is the pattern to copy: `getPreviewData`,
+  `onComplicationRequest`, type guard, `NoDataComplicationData()` when there is nothing
+  (never `null` — null means "no change" and the slot keeps its last image; pass 8.5
+  shipped an evening with two figures on screen because of exactly that).
+- The JSON: `events: [{ startMinute, durationMinutes, categoryId, color }]` (hex, already
+  resolved on the phone — pass 11 kept it that way, so a user category needs nothing here),
+  plus `currentMinute`, `countMode`, `wakeMinute`, `sleepMinute`, `currentBlock?`,
+  `nextBlock?`. Sample from the wrist on 10-07: `{"startMinute":1035,"durationMinutes":45,
+  "categoryId":"2wfNWlPh…","color":"#A3E635"}`.
+- Manifest registration pattern: `app/src/main/AndroidManifest.xml:52-68` (one `<service>`
+  per source, `BIND_COMPLICATION_PROVIDER`, `SUPPORTED_TYPES`, `UPDATE_PERIOD_SECONDS`).
+  For the arcs: `SUPPORTED_TYPES` = `SMALL_IMAGE` (add `PHOTO_IMAGE` if the spike needs
+  it), `UPDATE_PERIOD_SECONDS` = `0` — the Data Layer push drives it, as the count gates
+  (`:70-109`) already do.
 
-**Every `CATEGORIES.find()` site — each becomes a store lookup** (all `c => c.id ===
-x.categoryId`, all use `?.color` / `?.bg` / `?.label`):
-- `apps/mobile/src/app/day.tsx:56` (`pickCat`, the placement banner) and `:92` (`nextCat`,
-  the next-block countdown).
-- `apps/mobile/src/components/calendar/EventBlock.tsx:45` — the grid block itself.
-- `apps/mobile/src/components/schedule/ScheduleList.tsx:131` — the agenda row (pass 10).
-- `apps/mobile/src/components/tasks/TodoRow.tsx:23` — the task row chip.
-- `apps/mobile/src/components/ui/BlockModal.tsx:100` (new-block form) and `:261` (edit
-  sheet header dot + label).
-- `apps/mobile/src/app/watch.tsx:49` — the phone-side watch preview's block list.
-- `apps/mobile/src/components/watchface/EventArcs.tsx:17` — the SVG preview arcs.
-- `apps/mobile/src/services/watchSync.ts:54` — `buildWatchSnapshot` resolves `color` to a
-  hex string (`?? '#888'`) **at send time**; that is why the watch needs no change. Pass
-  the store's categories in (it is a pure function called from `_layout.tsx:92`).
-- `apps/web/src/App.jsx` has nine more `CATEGORIES.find` calls — the web prototype is
-  broken (0-byte entry files) and does not use `@1440/core`; **leave it alone**.
+**The face is generated — edit the generator, not the XML.**
+- `watch/android-wearos/tools/make-watchface.ps1` writes `wff/src/main/res/raw/watchface.xml`.
+  `:116-141` emits slots 1 and 3 (150×68 at 150,158, `isCustomizable="FALSE"`,
+  `DefaultProviderPolicy primaryProvider="com.planner1440.app/com.planner1440.watchface.<Svc>"
+  primaryProviderType="SHORT_TEXT"`); `:158-177` emits slot 2. A full-face slot is the
+  same shape: `slotId="4" x="0" y="0" width="450" height="450"` (the face is 450×450 by
+  design — the ring geometry in the first ~100 lines of the generator is the radius to
+  match), `supportedTypes="SMALL_IMAGE"`, `isCustomizable="FALSE"`, a `<Complication
+  type="SMALL_IMAGE">` containing a `<PartImage>` whose `<Image resource=
+  "[COMPLICATION.SMALL_IMAGE]"/>`. **Emit it before the ring/ticks/hand so it draws
+  underneath them.** The attribute is `primaryProviderType` — the wrong name throws
+  `primaryDataSourceDefaultType EMPTY must be in the supportedTypes list` and the face
+  cannot be favourited (memory note).
+- Pass 8.5 proved a full-size `isCustomizable="FALSE"` slot binds and an EMPTY slot simply
+  does not render, so the only unknown is the image tinting / scaling. **Put several
+  variants on the face at once** (different slot ids, different types, different
+  positions) and read off which survive — a round trip is 90 s, so probing is cheap.
 
-**The picker and the typed state.**
-- `apps/mobile/src/components/ui/CategoryPicker.tsx:14` maps `CATEGORIES` and `:20` casts
-  `cat.id as CategoryId` — becomes a map over the store, no cast. Used by
-  `BlockModal.tsx:195` and `:342` (the edit sheet commits `{ categoryId: id }` straight
-  to the store) and `TodoSheet.tsx:191`.
-- `useState<CategoryId>('deep')` at `BlockModal.tsx:95`, `:233` (`event?.categoryId ??
-  'deep' as const`) and `TodoSheet.tsx:76` — with `CategoryId = string` these compile
-  unchanged, but the `'deep'` default should become "the first category in the store".
+**Drawing.** `polarToCart`'s 0° is 12 o'clock and 1440 min = 360° (phone-side
+`EventArcs.tsx`); Android's `Canvas.drawArc` 0° is **3 o'clock**, so `startAngle =
+startMinute / 1440 * 360 − 90`, `sweep = durationMinutes / 1440 * 360`, `useCenter =
+false`, stroke width ≈ 4.5 of 450 scaled to the bitmap, `Paint.Cap.BUTT`. Build a
+`Bitmap.createBitmap(450, 450, ARGB_8888)` and wrap it:
+`SmallImageComplicationData.Builder(SmallImage.Builder(Icon.createWithBitmap(bmp),
+SmallImageType.PHOTO).build(), contentDescription).build()`. Parse `color` with
+`android.graphics.Color.parseColor`. Keep the Canvas face (`WatchFaceService.kt`) out of
+it — Wear OS 6 blocks it (memory note); the WFF face is the only one that renders.
 
-**Where the store goes and how it hydrates.**
-- Stores are zustand + `persist` with an injectable `StateStorage`, pattern in
-  `packages/core/src/store/useSettingsStore.ts` (`NOOP_STORAGE`, `init…Storage(adapter)`
-  calling `persist.setOptions` + `rehydrate()`, `skipHydration: true`, explicit
-  `partialize`). Copy that shape for `useCategoryStore` (`1440-planner-categories-v1`).
-  Export it and `initCategoryStorage` from `packages/core/src/index.ts:21-24`.
-- The phone injects adapters in `apps/mobile/src/services/storage.ts` (`initAllStores()`,
-  called at `_layout.tsx:38`) and gates rendering on **all three** stores' `persist.
-  hasHydrated()` at `_layout.tsx:55-72`. **Add the fourth store to both**, or the app
-  renders before categories exist and every chip is blank on cold start.
-- Seed: if the persisted list is empty after hydration, write the five built-ins. Do it
-  in the store's `onRehydrateStorage` or right after `rehydrate()` — not in a component.
-- **No dynamic `import()` in `packages/core`** (Metro rejects the split bundle for a
-  path outside `apps/mobile`); static imports only, and there are no cycles between the
-  stores.
-
-**Time ranges.** Today's single window is `wakeMinute` / `sleepMinute` in
-`useSettingsStore` (defaults 360 / 1320), edited in `apps/mobile/src/app/settings.tsx:120-124`
-via `MinuteInput` (`components/ui/`, built on `NumericField` — reuse it), read by
-`day.tsx:81` for the free-time stat and by `DayGrid.tsx:79` for the shading outside the
-window (the shading views must stay `pointerEvents="none"`, `CLAUDE.md` → Conventions).
-`buildWatchSnapshot` (`watchSync.ts:31`) also carries wake/sleep — leave that as is. A category's range is
-`startMinute?` / `endMinute?` in minutes from midnight (0–1439, `CLAUDE.md`); store it on
-the category, show it in the Settings list, and — as the visible payoff — draw each range
-as a faint band in that category's colour in the grid's ruler or shading layer. Keep
-wake/sleep as they are; the ranges are additive in this pass.
-
-**Deletion policy — decide before coding, record it under Decisions on record.**
-Recommended: DELETE on a category with blocks/todos asks to **reassign** them to another
-category (a chip row in the same sheet), and the lookup helper still falls back to a
-neutral `{ label: 'Uncategorised', color: C.L3, bg: … }` for any id it cannot find, so a
-stray id from an old backup never renders as `undefined`. Rejected alternatives to note:
-cascading delete of blocks (destroys data), and refusing to delete a category in use
-(keeps the user in a corner).
-
-**Where the UI goes.** Settings (`apps/mobile/src/app/settings.tsx`, reachable via the
-gear on Day) gains a CATEGORIES section: the list with colour dot, label, range; tap →
-a sheet (the `TodoSheet` pattern: Modal + backdrop + `Animated` slide + `ScrollView`)
-with LABEL, COLOUR (a palette of ~10 swatches is enough — no colour wheel), FROM / TO
-(`MinuteInput`), DELETE with the two-tap guard from pass 9. `+ CATEGORY` at the top.
-
-**Traps that are still live** (`CLAUDE.md`):
-- **Never filter `useCalendarStore.events` by date yourself** — `eventsOnDate()` /
-  `eventsInRange()` only.
-- `DESIGN_TOKENS` stays in `packages/core/src/types/event.ts`; no `theme.ts`; no hex
-  literals in components. The colour *palette* for the swatches is a legitimate new
-  const next to `DESIGN_TOKENS` (it is design data, not a token dump).
-- `tsc` can fail on `.expo/types/router.d.ts` after creating files outside `src/app`
-  while Metro runs — restart Metro, re-run. (Did not trigger in passes 8–10; still real.)
-- **Fast Refresh applies `apps/mobile` edits to the running app immediately; core edits
-  need force-stop + relaunch.** Data setup on the old code first.
-- The sheets' `KeyboardAvoidingView behavior={undefined}` on Android means a low field is
-  covered while the keyboard is up (Known debt) — put LABEL first in the new sheet.
+**What this unlocks** (`docs/STATUS.md` → Known debt): it closes *"The WFF face still
+cannot draw per-block arcs"*, and it is the only scope from which phone data can style
+anything outside a text slot (*"Phone data reaches the watch face as display strings"*),
+so count-mode colour for the ring / ticks / hand becomes "draw them in the same bitmap".
+**#12's category ring** (thin outer ring per category time range) is then a few more
+`drawArc` calls: add `ranges: [{ startMinute, endMinute, color }]` to `WatchSnapshot` in
+`watchSync.ts` from `categories.filter(hasRange)` (pass 11 left the data ready) — but that
+is a phone change and needs a phone rebuild; **leave it for #12** unless the renderer is
+done with time to spare.
 
 ## Constraints
 
-- Pass 11 is Categories only. **No watch face work, no rings** (#12 / #12a wait).
-- `CategoryId = string`; the five built-in ids survive unchanged so no persisted row
-  migrates. The calendar store's `version` stays 2.
-- Every `CATEGORIES.find` site above goes through one shared lookup with the fallback;
-  grep for `CATEGORIES` at the end — the only remaining reference should be the seed.
-- Dark mode only; tokens from `DESIGN_TOKENS`.
+- Pass 12a is the watch only; no phone JS, no phone native rebuild (disk).
+- `:app`'s `applicationId` stays `com.planner1440.app`, signed with `app/debug.keystore`
+  (the Data Layer routes only between the two halves of one app).
+- Generated files (`wff/src/main/res/raw/watchface.xml`, the preview PNGs) are regenerated
+  by the `tools/*.ps1` scripts — edit the generators, commit both.
+- A slot gate that has nothing to show returns `NoDataComplicationData()`, never `null`.
 
 ## Verification (required)
 
-1. `adb devices` lists the phone.
-2. **Cold start with the old persisted data** → the five built-in categories appear in
-   Settings, every existing block and todo keeps its chip colour and label (screenshot
-   Day on 09-28 and SCHEDULE before and after — identical).
-3. **Add** `Gym` (new colour, range 17:00–19:00) → `+ BLOCK` shows it in the picker →
-   a block with it renders in that colour on Day, SCHEDULE, the WATCH preview and the
-   task chip (place a todo with it). Store row in `1440-planner-categories-v1` via the
-   `RKStorage` recipe; survives `am force-stop` + relaunch.
-4. **Edit** `Gym`'s colour → every surface follows without a restart. **Delete** `Gym`
-   with one block on it → the reassign prompt → block now shows the chosen category;
-   `categoryId` in the calendar store row updated.
-5. **Watch snapshot carries the new hex**: phone logcat `1440:WatchSync putDataItem ok`
-   after step 3, and either the watch's `shared_prefs/1440_watch.xml` (`run-as` recipe)
-   or a `console.log` of the snapshot shows the block with `Gym`'s colour, not `#888`.
-6. **Nothing regressed**: cold start → Day 3×; Tasks → PICK flow; SCHEDULE still lists
-   `Daily Huddle` with the Meeting chip; the notification log line does not repeat in a
-   2-minute quiet window.
-7. `npx tsc --noEmit -p apps/mobile` and `-p packages/core` clean; `npx expo-doctor` 21/21.
+1. `adb devices` lists the watch; screen timeout raised; `dumpsys trust` says
+   `deviceLocked=0` before trusting any face screenshot.
+2. **Spike**: the test bitmap's three arcs appear in three distinct colours at full-face
+   scale behind the hand (zoom the 480×480 screenshot with the `System.Drawing` recipe).
+   Record which slot type / size worked in the session log.
+3. **Renderer**: with the real snapshot (push a `1440_watch.xml` via `run-as cp` if the phone
+   is not around — recipe in the memory note), the face shows one arc per block at the
+   right angle and colour; `Daily Huddle` (7:30 AM, 15 min, `#38BDF8`) is a good fixed
+   reference.
+4. A Data Layer push (or a face switch away and back) redraws within seconds — logcat shows
+   the new source being queried alongside `[11:…]` / `[12:…]`.
+5. The count-mode gates and slot 2 still behave: switch count mode on the phone (or push an
+   edited snapshot) and only one headline figure shows.
+6. `gradlew :app:assembleDebug :wff:assembleDebug` clean; no phone-side `tsc` change
+   expected (run it anyway: `npx tsc --noEmit -p apps/mobile` and `-p packages/core`).
 
 ## Wrap-up
 
-- Conventional Commits: `feat(core): category store with time ranges, CategoryId is a
-  string`, `feat(categories): add / edit / delete categories in Settings`, `docs: pass-11
-  …`.
+- Conventional Commits: `feat(watch): block arcs drawn into a full-face image complication`
+  (+ a separate `spike(watch): …` commit if the spike needed throwaway variants — squash or
+  keep, but say so), `docs: pass-12a …`.
 - Push, open the PR through the GitHub API (no `gh`; recipe in the memory note), **do not
-  merge**. Say which branch you stacked on. PR description: the deletion policy, the
-  fallback, what the ranges do today, verification with screenshots, anything left.
-- `docs/STATUS.md`: TL;DR PR count and open branches; ✅ Working → a Categories bullet;
-  strike item 11 from "Next up"; the deletion policy under Decisions on record; pass-11
-  log entry; replace this section with the **pass-12a handoff — watch block arcs** (the
-  spike first: does a full-face `SMALL_IMAGE` / `PHOTO_IMAGE` complication slot render
-  untinted on the Galaxy Watch 7; then a watch-side data source that draws the arcs
-  from the snapshot in `SharedPreferences` with `Canvas.drawArc`; cite
-  `watch/android-wearos/app` `DataLayerClient` and the generator
-  `tools/make-watchface.ps1`, and the Known-debt entries it closes).
-- **Print the pass-12a handoff prompt in full in the chat too**, in one fenced block, as
-  the last thing in the session (`CLAUDE.md` → Session workflow).
-- Update the `device-and-tooling` memory note: Metro PID, phone IP/pin state, disk, any
-  new traps.
+  merge**. Say which branch you stacked on. PR description: the spike result (what rendered
+  untinted and at what size), the renderer, screenshots of the face before / after,
+  anything left (the category ring, count-mode colouring of the ring).
+- `docs/STATUS.md`: TL;DR PR count and open branches; ✅ Working → the watch face bullet;
+  Known debt → strike the arcs entry and amend the display-strings entry; Next up → strike
+  12a, update 12; pass-12a log entry; replace this section with the **pass-12 handoff
+  (category ring + count-mode colour on the face, phone snapshot `ranges` field)** or
+  **#13** if the owner prefers.
+- **Print the next handoff prompt in full in the chat too**, in one fenced block, as the
+  last thing in the session (`CLAUDE.md` → Session workflow).
+- Put the watch's `screen_off_timeout` back to `60000`. Update the `device-and-tooling`
+  memory note: Metro PID, phone / watch pin state, disk, which image slot type rendered.

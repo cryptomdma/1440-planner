@@ -2,7 +2,7 @@ import React, { useMemo, useState, useCallback } from 'react';
 import { View, Text, Pressable, SectionList, StyleSheet, Platform } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
-  CATEGORIES, DESIGN_TOKENS as C,
+  DESIGN_TOKENS as C, useCategory,
   useCalendarStore, useSettingsStore, useCurrentMinute,
   eventsInRange, isSeries, describeRepeat,
   today, dateAddDays, formatDateDisplay, isToday,
@@ -128,7 +128,7 @@ interface RowProps {
 }
 
 function ScheduleRow({ event, now, accent, onPress }: RowProps) {
-  const cat     = CATEGORIES.find(c => c.id === event.categoryId);
+  const cat     = useCategory(event.categoryId);
   const end     = event.startMinute + event.durationMinutes;
   const current = now !== null && event.startMinute <= now && now < end;
   const past    = now !== null && end <= now;
@@ -138,8 +138,8 @@ function ScheduleRow({ event, now, accent, onPress }: RowProps) {
     <Pressable
       style={[
         s.row,
-        { borderLeftColor: cat?.color ?? C.border },
-        current && { borderColor: accent, backgroundColor: cat?.bg ?? C.bg3 },
+        { borderLeftColor: cat.color },
+        current && { borderColor: accent, backgroundColor: cat.bg },
         past && s.rowPast,
       ]}
       onPress={() => onPress(event)}
@@ -152,7 +152,7 @@ function ScheduleRow({ event, now, accent, onPress }: RowProps) {
       <View style={s.body}>
         <Text style={s.title} numberOfLines={1}>{event.title}</Text>
         <View style={s.tags}>
-          <Text style={[s.tag, { color: cat?.color, backgroundColor: cat?.bg }]}>{cat?.label}</Text>
+          <Text style={[s.tag, { color: cat.color, backgroundColor: cat.bg }]}>{cat.label}</Text>
           {current && <Text style={[s.nowTag, { color: accent, borderColor: accent }]}>NOW</Text>}
           {series && <Text style={s.metaTag}>↺ {describeRepeat(event.repeat)}</Text>}
           {event.fromTodo && <Text style={s.metaTag}>☑ from tasks</Text>}
