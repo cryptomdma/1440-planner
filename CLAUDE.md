@@ -160,9 +160,16 @@ not to land, the check is still the same — the Gradle log must show
 ## Conventions in the code
 
 - **Dark mode only.** Light mode is a tracked future milestone.
-- Design tokens live in `packages/core/src/types/event.ts` (`DESIGN_TOKENS`, `CATEGORIES`,
-  `PRIORITIES`). That is the single source of truth — **do not create a second
+- Design tokens live in `packages/core/src/types/event.ts` (`DESIGN_TOKENS`, `PRIORITIES`,
+  `CATEGORY_PALETTE`). That is the single source of truth — **do not create a second
   `theme.ts`**, and do not hardcode hex values in components.
+- **Categories are data, not a const** (since pass 11). `CATEGORIES` in `types/event.ts` is
+  only the seed for `useCategoryStore` and is not exported from the barrel. Never look a
+  category up by id yourself — use `useCategory(id)` / `useCategories()` in components and
+  `resolveCategory(categories, id)` elsewhere; both return a renderable category for *any*
+  id (unknown → `UNCATEGORISED`, grey), so no style ever gets `undefined`. `CategoryId` is a
+  plain `string`. A new store must also be added to `initAllStores()` **and** the hydration
+  gate in `_layout.tsx`.
 - Time is **minutes from midnight (0–1439)**, not clock time. Convert only at the display
   edge, via the helpers in `packages/core/src/utils/time.ts`.
 - Grid constants (`PPM`, `BLOCK_SIZE`, `RULER_W`) come from core — never inline them.

@@ -11,12 +11,12 @@
 
 `docs/CLAUDE_CODE_HANDOFF.md:566` originally called for a separate
 `packages/core/src/theme.ts`. **That file was intentionally not created.** `DESIGN_TOKENS`
-already ships from `types/event.ts` alongside `CATEGORIES` and `PRIORITIES`, and splitting
-them across two modules would give the palette two homes and let them drift. Import from
-the `@1440/core` barrel:
+already ships from `types/event.ts` alongside `CATEGORY_PALETTE` and `PRIORITIES`, and
+splitting them across two modules would give the palette two homes and let them drift.
+Import from the `@1440/core` barrel:
 
 ```ts
-import { DESIGN_TOKENS, CATEGORIES, PRIORITIES, PPM, BLOCK_SIZE, RULER_W } from '@1440/core';
+import { DESIGN_TOKENS, CATEGORY_PALETTE, PRIORITIES, PPM, BLOCK_SIZE, RULER_W } from '@1440/core';
 ```
 
 **Never hardcode a hex value in a component.** A past bug required a sweep to remove
@@ -35,19 +35,25 @@ named by *role and depth*, not by lightness — a light theme would reassign the
 | Grid | `gridHr`, `gridQtr` | Hour lines vs. quarter-hour lines in the day grid and ruler. `gridQtr` is deliberately dimmer. |
 | Accent | `amber`, `cyan` | `amber` is the brand/now accent; `cyan` is the secondary accent. |
 
-## Categories — `CATEGORIES`
+## Categories — `useCategoryStore` and `CATEGORY_PALETTE`
 
-Five fixed event categories (`deep`, `meeting`, `admin`, `break`, `personal`). Each carries:
+Since pass 11 categories are **user data** in a persisted store, not a const. The five
+built-ins (`deep`, `meeting`, `admin`, `break`, `personal`) are only the seed (`CATEGORIES`
+in `types/event.ts`, deliberately not exported). A category stores:
 
-- `color` — the saturated stroke/label color
-- `bg` — the same hue at **0.18 alpha**, used as the block fill
+- `color` — one `#RRGGBB`, picked from `CATEGORY_PALETTE` (twelve swatches; the first five
+  are the seed colours)
+- an optional `startMinute` / `endMinute` range, drawn as a faint band on the Day grid
 
-Keeping `bg` as a translucent match of `color` is what lets overlapping blocks stay legible
-against the grid. Preserve that relationship when adding a category.
+`bg` — the same hue at **0.18 alpha**, the block fill — is **derived** by `categoryBg()`
+in `utils/category.ts`; every lookup (`useCategory`, `resolveCategory`) returns it. Keeping
+`bg` a translucent match of `color` is what lets overlapping blocks stay legible against
+the grid; the derivation makes that relationship impossible to break.
 
 Category colors are also the source for watch-face event arcs — `buildWatchSnapshot()`
-resolves `categoryId` → `color` when assembling the snapshot
-(`apps/mobile/src/services/watchSync.ts:53`), so a palette change propagates to the watch.
+resolves `categoryId` → hex when assembling the snapshot
+(`apps/mobile/src/services/watchSync.ts`), so a recolour propagates to the watch on the
+next send and the watch never needs the category list.
 
 ## Priorities — `PRIORITIES`
 
