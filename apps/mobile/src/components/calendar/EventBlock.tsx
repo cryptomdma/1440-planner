@@ -3,7 +3,7 @@ import { View, Text, Pressable, StyleSheet, useWindowDimensions, Platform } from
 import { PanGestureHandler, State } from 'react-native-gesture-handler';
 import type { PanGestureHandlerStateChangeEvent, PanGestureHandlerGestureEvent } from 'react-native-gesture-handler';
 import * as Haptics from 'expo-haptics';
-import { CATEGORIES, DESIGN_TOKENS as C, PPM, RULER_W, BLOCK_SIZE, MINUTES_IN_DAY } from '@1440/core';
+import { DESIGN_TOKENS as C, PPM, RULER_W, BLOCK_SIZE, MINUTES_IN_DAY, useCategory } from '@1440/core';
 import type { CalendarEvent, EventLayoutSlot } from '@1440/core';
 import { minuteToTimeStr } from '@1440/core';
 
@@ -41,8 +41,11 @@ export default function EventBlock({ event, layout, selected, onSelect, onUpdate
     draftRef.current = { start: event.startMinute, duration: event.durationMinutes };
   }, [event.startMinute, event.durationMinutes, isActive]);
 
+  // Store lookup with the UNCATEGORISED fallback, so a deleted category's
+  // block still renders (grey) rather than with undefined colours.
+  const cat = useCategory(event?.categoryId);
+
   if (!event) return null;
-  const cat = CATEGORIES.find(c => c.id === event.categoryId);
 
   const { column = 0, totalColumns = 1 } = layout;
   const availableWidth = screenWidth - RULER_W - RIGHT_PAD;
@@ -162,8 +165,8 @@ export default function EventBlock({ event, layout, selected, onSelect, onUpdate
             height: Math.max(event.durationMinutes * PPM, 24),
             left:   leftPos,
             width:  blockWidth,
-            borderLeftColor: cat?.color ?? '#fff',
-            backgroundColor: cat?.bg ?? 'rgba(255,255,255,0.04)',
+            borderLeftColor: cat.color,
+            backgroundColor: cat.bg,
           }]}
         />
       )}
@@ -183,10 +186,10 @@ export default function EventBlock({ event, layout, selected, onSelect, onUpdate
               top, height,
               left:            leftPos,
               width:           blockWidth,
-              backgroundColor: cat?.bg ?? 'rgba(255,255,255,0.08)',
-              borderLeftColor: cat?.color ?? '#fff',
-              borderColor:     selected || isActive ? cat?.color : 'transparent',
-              shadowColor:     selected || isActive ? cat?.color : undefined,
+              backgroundColor: cat.bg,
+              borderLeftColor: cat.color,
+              borderColor:     selected || isActive ? cat.color : 'transparent',
+              shadowColor:     selected || isActive ? cat.color : undefined,
               shadowOpacity:   selected || isActive ? 0.5 : 0,
               zIndex:          isActive ? 30 : selected ? 10 : 2,
               opacity:         isActive ? 0.92 : 1,
@@ -202,9 +205,9 @@ export default function EventBlock({ event, layout, selected, onSelect, onUpdate
             }}
           >
             <View style={s.titleRow}>
-              <View style={[s.dot, { backgroundColor: cat?.color }]} />
+              <View style={[s.dot, { backgroundColor: cat.color }]} />
               <Text style={s.title} numberOfLines={1}>{event.title}</Text>
-              {event.fromTodo && <Text style={[s.badge, { color: cat?.color }]}>☑</Text>}
+              {event.fromTodo && <Text style={[s.badge, { color: cat.color }]}>☑</Text>}
               {event.seriesId && <Text style={[s.badge, { color: C.L3 }]}>↺</Text>}
             </View>
             {height > 32 && (
@@ -227,7 +230,7 @@ export default function EventBlock({ event, layout, selected, onSelect, onUpdate
               onHandlerStateChange={onTopKnobStateChange}
             >
               <View style={s.knobHitTop}>
-                <View style={[s.knobBar, { backgroundColor: cat?.color ?? C.L3 }]} />
+                <View style={[s.knobBar, { backgroundColor: cat.color }]} />
               </View>
             </PanGestureHandler>
           )}
@@ -240,7 +243,7 @@ export default function EventBlock({ event, layout, selected, onSelect, onUpdate
               onHandlerStateChange={onBotKnobStateChange}
             >
               <View style={s.knobHitBot}>
-                <View style={[s.knobBar, { backgroundColor: cat?.color ?? C.L3 }]} />
+                <View style={[s.knobBar, { backgroundColor: cat.color }]} />
               </View>
             </PanGestureHandler>
           )}

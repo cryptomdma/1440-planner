@@ -1,23 +1,25 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { CATEGORIES, DESIGN_TOKENS as C } from '@1440/core';
-import type { CategoryId } from '@1440/core';
+import { DESIGN_TOKENS as C, useCategories } from '@1440/core';
 
 interface Props {
-  value:    CategoryId;
-  onChange: (id: CategoryId) => void;
+  value:    string;
+  onChange: (id: string) => void;
 }
 
+// Chips for every category in the store — built-ins and user-made alike, in
+// store order (the order Settings shows them in).
 export default function CategoryPicker({ value, onChange }: Props) {
+  const categories = useCategories();
   return (
     <View style={s.grid}>
-      {CATEGORIES.map(cat => {
+      {categories.map(cat => {
         const active = cat.id === value;
         return (
           <Pressable
             key={cat.id}
             style={[s.chip, { borderColor: active ? cat.color : C.border, backgroundColor: active ? cat.bg : 'transparent' }]}
-            onPress={() => onChange(cat.id as CategoryId)}
+            onPress={() => onChange(cat.id)}
           >
             <View style={[s.dot, { backgroundColor: cat.color }]} />
             <Text style={[s.label, { color: active ? cat.color : C.L2 }]}>{cat.label}</Text>

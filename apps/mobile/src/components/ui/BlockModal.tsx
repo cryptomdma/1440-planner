@@ -4,11 +4,12 @@ import {
   StyleSheet, Animated, Platform, KeyboardAvoidingView,
 } from 'react-native';
 import {
-  CATEGORIES, DESIGN_TOKENS as C, BLOCK_SIZE,
+  DESIGN_TOKENS as C, BLOCK_SIZE,
   minuteToTimeStr, formatDateDisplay,
   today, isSeries, describeRepeat,
+  useCategory, useCategoryStore,
 } from '@1440/core';
-import type { CalendarEvent, CategoryId, RepeatConfig, SeriesScope } from '@1440/core';
+import type { CalendarEvent, RepeatConfig, SeriesScope } from '@1440/core';
 import MinuteInput from './MinuteInput';
 import CategoryPicker from './CategoryPicker';
 import RepeatPicker from './RepeatPicker';
@@ -92,13 +93,16 @@ function AddForm(props: AddMode & { onClose: () => void }) {
   const [date,       setDate]       = useState(initialDate ?? today());
   const [start,      setStart]      = useState(initialStart ?? 0);
   const [duration,   setDuration]   = useState(defaultDuration ?? 60);
-  const [categoryId, setCategoryId] = useState<CategoryId>('deep');
+  // A new block defaults to the first category in the store (the user's order).
+  const [categoryId, setCategoryId] = useState<string>(
+    () => useCategoryStore.getState().categories[0]?.id ?? ''
+  );
   const [notes,      setNotes]      = useState('');
   const [repeat,     setRepeat]     = useState<RepeatConfig>(BLANK_REPEAT);
   const [showRepeat, setShowRepeat] = useState(false);
 
-  const cat = CATEGORIES.find(c => c.id === categoryId);
-  const resolvedTitle = (title.trim() || cat?.label) ?? 'Block';
+  const cat = useCategory(categoryId);
+  const resolvedTitle = title.trim() || cat.label;
   const repeating = repeat.mode !== 'none';
   const repeatText = describeRepeat(repeat);
 
@@ -139,7 +143,7 @@ function AddForm(props: AddMode & { onClose: () => void }) {
           style={s.textInput}
           value={title}
           onChangeText={setTitle}
-          placeholder={cat?.label}
+          placeholder={cat.label}
           placeholderTextColor={C.L3}
           autoFocus
         />
@@ -230,7 +234,7 @@ function EditForm(props: EditMode & { onClose: () => void }) {
   const [title,      setTitle]      = useState(() => event?.title ?? '');
   const [start,      setStart]      = useState(() => event?.startMinute ?? 0);
   const [duration,   setDuration]   = useState(() => event?.durationMinutes ?? 60);
-  const [categoryId, setCategoryId] = useState(() => event?.categoryId ?? 'deep' as const);
+  const [categoryId, setCategoryId] = useState<string>(() => event?.categoryId ?? '');
   const [date,       setDate]       = useState(() => event?.date ?? today());
   const [notes,      setNotes]      = useState(() => event?.notes ?? '');
   // Series only: whether field edits touch this occurrence or the whole series.
@@ -258,7 +262,8 @@ function EditForm(props: EditMode & { onClose: () => void }) {
   };
   const commitDate = (d: string) => { setDate(d); onUpdate(event.id, { date: d }); };
 
-  const cat = CATEGORIES.find(c => c.id === categoryId);
+  // Always renderable: a deleted or unknown category resolves to UNCATEGORISED.
+  const cat = useCategory(categoryId);
 
   return (
     <ScrollView
@@ -269,9 +274,9 @@ function EditForm(props: EditMode & { onClose: () => void }) {
       {/* Header */}
       <View style={s.row}>
         <View style={s.row}>
-          <View style={[s.catDot, { backgroundColor: cat?.color }]} />
-          <Text style={[s.headerLabel, { color: cat?.color ?? ac }]}>
-            {cat?.label?.toUpperCase()}
+          <View style={[s.catDot, { backgroundColor: cat.color }]} />
+          <Text style={[s.headerLabel, { color: cat.color }]}>
+            {cat.label.toUpperCase()}
           </Text>
         </View>
         <Pressable onPress={onClose}><Text style={s.closeBtn}>✕</Text></Pressable>
@@ -309,11 +314,11 @@ function EditForm(props: EditMode & { onClose: () => void }) {
       <View>
         <Text style={s.lbl}>TITLE</Text>
         <TextInput
-          style={[s.textInput, { borderColor: cat?.color ?? C.border, color: cat?.color ?? C.L1 }]}
+          style={[s.textInput, { borderColor: cat.color, color: cat.color }]}
           value={title}
           onChangeText={setTitle}
-          onBlur={() => commit({ title: title.trim() || cat?.label || 'Block' })}
-          placeholder={cat?.label}
+          onBlur={() => commit({ title: title.trim() || cat.label })}
+          placeholder={cat.label}
           placeholderTextColor={C.L3}
         />
       </View>
@@ -368,10 +373,10 @@ function EditForm(props: EditMode & { onClose: () => void }) {
           {QUICK_DURS.map(d => (
             <Pressable
               key={d}
-              style={[s.quickBtn, duration === d && { borderColor: cat?.color ?? ac, backgroundColor: cat?.bg ?? `${ac}22` }]}
+              style={[s.quickBtn, duration === d && { borderColor: cat.color, backgroundColor: cat.bg }]}
               onPress={() => { setDuration(d); commit({ durationMinutes: d }); }}
             >
-              <Text style={[s.quickBtnText, duration === d && { color: cat?.color ?? ac, fontWeight: '700' }]}>{d}m</Text>
+              <Text style={[s.quickBtnText, duration === d && { color: cat.color, fontWeight: '700' }]}>{d}m</Text>
             </Pressable>
           ))}
         </View>

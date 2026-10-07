@@ -1,12 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
-  View, Text, Pressable, ScrollView, StyleSheet, Switch, Platform,
+  View, Text, Pressable, ScrollView, StyleSheet, Switch,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import {
   DESIGN_TOKENS as C, useSettingsStore, minuteToTimeStr,
+  useCategories, describeRange,
 } from '@1440/core';
-import MinuteInput from '../components/ui/MinuteInput';
+import type { Category } from '@1440/core';
+import MinuteInput   from '../components/ui/MinuteInput';
+import CategorySheet from '../components/ui/CategorySheet';
 
 const DURATIONS  = [15, 30, 45, 60, 90, 120];
 const BUFFERS    = [0, 5, 10, 15, 30];
@@ -21,6 +24,11 @@ export default function SettingsScreen() {
   } = useSettingsStore();
 
   const ac = countMode === 'down' ? C.cyan : C.amber;
+
+  // Categories (pass 11): the list lives in its own store; the sheet adds or
+  // edits one. `sheet` is null (closed), 'add', or the category being edited.
+  const categories = useCategories();
+  const [sheet, setSheet] = useState<'add' | Category | null>(null);
 
   // Settings can be the first screen (planner1440:///settings deep link), in
   // which case there is no history and back() logs "GO_BACK was not handled".
@@ -134,6 +142,30 @@ export default function SettingsScreen() {
           </View>
         </Section>
 
+        {/* Categories */}
+        <Section label="CATEGORIES">
+          <Pressable style={[s.addBtn, { borderColor: ac }]} onPress={() => setSheet('add')}>
+            <Text style={[s.addBtnText, { color: ac }]}>+ CATEGORY</Text>
+          </Pressable>
+          <View style={s.catList}>
+            {categories.map(cat => {
+              const range = describeRange(cat);
+              return (
+                <Pressable key={cat.id} style={s.catRow} onPress={() => setSheet(cat)}>
+                  <View style={[s.catDot, { backgroundColor: cat.color }]} />
+                  <Text style={[s.catLabel, { color: cat.color }]} numberOfLines={1}>{cat.label}</Text>
+                  <Text style={s.catRange}>{range || 'no range'}</Text>
+                  <Text style={s.catChevron}>›</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <Text style={s.hint}>
+            Tap a category to rename, recolour, set a time range or delete it. A range is drawn
+            as a faint band on the Day grid.
+          </Text>
+        </Section>
+
         {/* Conflict highlight */}
         <Section label="DISPLAY">
           <View style={s.row}>
@@ -161,6 +193,16 @@ export default function SettingsScreen() {
           <Text style={[s.doneBtnText, { color: ac }]}>SAVE & CLOSE</Text>
         </Pressable>
       </ScrollView>
+
+      {/* Add / edit category sheet. Keyed so a fresh form mounts per open. */}
+      {sheet !== null && (
+        <CategorySheet
+          key={sheet === 'add' ? 'add' : sheet.id}
+          visible
+          onClose={() => setSheet(null)}
+          category={sheet === 'add' ? undefined : sheet}
+        />
+      )}
     </View>
   );
 }
@@ -201,6 +243,21 @@ const s = StyleSheet.create({
   hint:         { fontSize: 8, color: C.L3, marginTop: 4 },
   lbl:          { fontSize: 8, color: C.L3, letterSpacing: 1.5, marginBottom: 4 },
   switchLabel:  { flex: 1, fontSize: 10, color: C.L2 },
+  addBtn: {
+    alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: 4, borderWidth: 1, marginBottom: 10,
+  },
+  addBtnText:   { fontSize: 9, fontWeight: '900', letterSpacing: 1.5 },
+  catList:      { gap: 6 },
+  catRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    backgroundColor: C.bg2, borderWidth: 1, borderColor: C.border,
+    borderRadius: 6, paddingHorizontal: 12, paddingVertical: 10,
+  },
+  catDot:       { width: 10, height: 10, borderRadius: 3, flexShrink: 0 },
+  catLabel:     { flex: 1, fontSize: 11, fontWeight: '700', minWidth: 0 },
+  catRange:     { fontSize: 9, color: C.L3, flexShrink: 0 },
+  catChevron:   { fontSize: 16, color: C.L4, paddingLeft: 2 },
   doneBtn: {
     marginTop: 10, padding: 11, borderRadius: 4,
     borderWidth: 1, alignItems: 'center',

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Path } from 'react-native-svg';
-import { CATEGORIES, polarToCart, MINUTES_IN_DAY } from '@1440/core';
+import { polarToCart, MINUTES_IN_DAY, useCategories, resolveCategory } from '@1440/core';
 import type { CalendarEvent } from '@1440/core';
 
 interface Props {
@@ -11,11 +11,11 @@ interface Props {
 }
 
 export default function EventArcs({ cx, cy, r, events }: Props) {
+  const categories = useCategories();
   return (
     <>
       {events.map(ev => {
-        const cat   = CATEGORIES.find(c => c.id === ev.categoryId);
-        const color = cat?.color ?? '#fff';
+        const color = resolveCategory(categories, ev.categoryId).color;
         // polarToCart's 0° is 12 o'clock — do not subtract 90 here.
         const sAngle = (ev.startMinute / MINUTES_IN_DAY) * 360;
         const eAngle = ((ev.startMinute + ev.durationMinutes) / MINUTES_IN_DAY) * 360;

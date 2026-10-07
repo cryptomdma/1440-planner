@@ -4,7 +4,7 @@ import {
 } from 'react-native';
 import {
   DESIGN_TOKENS as C, PPM, MINUTES_IN_DAY, BLOCK_SIZE, RULER_W,
-  computeLayout, minuteToTimeStr,
+  computeLayout, minuteToTimeStr, useCategories, hasRange,
 } from '@1440/core';
 import type { CalendarEvent } from '@1440/core';
 import EventBlock from './EventBlock';
@@ -34,6 +34,9 @@ export default function DayGrid({
   const didInitScroll  = useRef(false);
   const layout         = computeLayout(events);
   const [isDraggingAny, setIsDraggingAny] = useState(false);
+  // Categories with a time range are drawn as faint bands (pass 11); the
+  // wake/sleep shading stays as it is — the two are additive.
+  const ranged = useCategories().filter(hasRange);
 
   const nowY = Math.max(0, currentMinute * PPM - 250);
 
@@ -79,6 +82,28 @@ export default function DayGrid({
         <View style={[s.shade, { top: 0, height: wakeMinute * PPM }]} pointerEvents="none" />
         <View style={[s.shade, { top: sleepMinute * PPM, height: (MINUTES_IN_DAY - sleepMinute) * PPM }]} pointerEvents="none" />
 
+        {/* Category time ranges: a faint full-width wash in the category's
+            colour plus a solid strip down the far-left edge of the ruler, so
+            overlapping ranges still read. Same pointerEvents rule as the shade. */}
+        {ranged.map(c => (
+          <React.Fragment key={c.id}>
+            <View
+              pointerEvents="none"
+              style={[s.rangeWash, {
+                top: c.startMinute * PPM, height: (c.endMinute - c.startMinute) * PPM,
+                backgroundColor: c.color,
+              }]}
+            />
+            <View
+              pointerEvents="none"
+              style={[s.rangeEdge, {
+                top: c.startMinute * PPM, height: (c.endMinute - c.startMinute) * PPM,
+                backgroundColor: c.color,
+              }]}
+            />
+          </React.Fragment>
+        ))}
+
         {/* Ruler + grid lines */}
         <TimelineRuler countMode={countMode} />
 
@@ -119,6 +144,8 @@ const s = StyleSheet.create({
     position: 'absolute', left: 0, right: 0,
     backgroundColor: 'rgba(0,0,0,0.25)',
   },
+  rangeWash: { position: 'absolute', left: RULER_W, right: 0, opacity: 0.06 },
+  rangeEdge: { position: 'absolute', left: 0, width: 3, opacity: 0.75 },
   nowRow: {
     position: 'absolute', left: 0, right: 0,
     flexDirection: 'row', alignItems: 'center', height: 2,

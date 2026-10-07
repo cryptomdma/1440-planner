@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { View, Text, ScrollView, Pressable, StyleSheet } from 'react-native';
 import {
-  DESIGN_TOKENS as C, CATEGORIES,
+  DESIGN_TOKENS as C, useCategories, resolveCategory,
   useCalendarStore, useSettingsStore,
   useCurrentMinute, minuteToTimeStr, formatDuration, eventsOnDate,
 } from '@1440/core';
@@ -23,6 +23,7 @@ export default function WatchScreen() {
   }));
 
   const [selEv, setSelEv] = useState<CalendarEvent | null>(null);
+  const categories = useCategories();
 
   const ac         = countMode === 'down' ? C.cyan : C.amber;
   const dayEvents  = useMemo(() => eventsOnDate(events, selectedDate), [events, selectedDate]);
@@ -46,7 +47,7 @@ export default function WatchScreen() {
             <Text style={s.empty}>No blocks scheduled</Text>
           ) : (
             sortedEvs.map(ev => {
-              const cat    = CATEGORIES.find(c => c.id === ev.categoryId);
+              const cat    = resolveCategory(categories, ev.categoryId);
               const isNow  = ev.startMinute <= currentMinute && ev.startMinute + ev.durationMinutes > currentMinute;
               return (
                 <Pressable
@@ -54,7 +55,7 @@ export default function WatchScreen() {
                   style={[s.evRow, isNow && { borderLeftColor: ac, borderLeftWidth: 3 }]}
                   onPress={() => setSelEv(ev)}
                 >
-                  <View style={[s.evDot, { backgroundColor: cat?.color }]} />
+                  <View style={[s.evDot, { backgroundColor: cat.color }]} />
                   <View style={s.evInfo}>
                     <Text style={[s.evTitle, isNow && { color: C.L1 }]} numberOfLines={1}>
                       {ev.title}

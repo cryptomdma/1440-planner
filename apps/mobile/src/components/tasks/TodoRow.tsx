@@ -1,8 +1,8 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import {
-  CATEGORIES, PRIORITIES, DESIGN_TOKENS as C,
-  describeRepeat, formatDateDisplay, isToday,
+  PRIORITIES, DESIGN_TOKENS as C,
+  describeRepeat, formatDateDisplay, isToday, useCategory,
 } from '@1440/core';
 import type { Todo } from '@1440/core';
 
@@ -19,8 +19,8 @@ interface Props {
 }
 
 export default function TodoRow({ todo, occurrenceDate, onDone, onDelete, onSchedule, onPick, onPress }: Props) {
+  const cat        = useCategory(todo?.categoryId);
   if (!todo) return null;
-  const cat        = CATEGORIES.find(c => c.id === todo.categoryId);
   const pri        = PRIORITIES.find(p => p.id === todo.priority);
   const isScheduled = todo.status === 'scheduled';
   const isDone      = todo.status === 'done';
@@ -55,7 +55,7 @@ export default function TodoRow({ todo, occurrenceDate, onDone, onDelete, onSche
           <Text style={s.notes} numberOfLines={1}>{todo.notes}</Text>
         )}
         <View style={s.tags}>
-          <Text style={[s.tag, { color: cat?.color, backgroundColor: cat?.bg }]}>{cat?.label}</Text>
+          <Text style={[s.tag, { color: cat.color, backgroundColor: cat.bg }]}>{cat.label}</Text>
           <Text style={[s.priTag, { color: pri?.color }]}>{pri?.label}</Text>
           <Text style={s.durTag}>{todo.durationMinutes}m</Text>
           {!!repeatText && <Text style={s.repTag}>↺ {repeatText}</Text>}
