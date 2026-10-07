@@ -56,6 +56,9 @@ interface CalendarState {
   // Dispatches on scope; plain ids ignore it.
   deleteWithScope:      (id: string, scope: SeriesScope) => void;
   getEventsForDate:     (date: string) => CalendarEvent[];
+  // Every block on category `from` (base rows and occurrence overrides alike)
+  // moves to `to`. Used when a category is deleted (useCategoryStore).
+  reassignCategory:     (from: string, to: string) => void;
 }
 
 function patchSeries(
@@ -203,6 +206,23 @@ export const useCalendarStore = create<CalendarState>()(
       },
 
       getEventsForDate: (date) => eventsOnDate(get().events, date),
+
+      reassignCategory: (from, to) =>
+        set(s => ({
+          events: s.events.map(e => {
+            let next = e;
+            if (e.categoryId === from) next = { ...next, categoryId: to };
+            const overrides = e.repeat?.overrides;
+            if (overrides && Object.values(overrides).some(ov => ov.categoryId === from)) {
+              const moved: Record<string, RepeatOverride> = {};
+              for (const [d, ov] of Object.entries(overrides)) {
+                moved[d] = ov.categoryId === from ? { ...ov, categoryId: to } : ov;
+              }
+              next = { ...next, repeat: { ...next.repeat!, overrides: moved } };
+            }
+            return next;
+          }),
+        })),
     }),
     {
       name: '1440-planner-calendar-v1',

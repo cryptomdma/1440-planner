@@ -1,21 +1,43 @@
 import type { RepeatConfig } from './repeat';
 
-export type CategoryId = 'deep' | 'meeting' | 'admin' | 'break' | 'personal';
+// Since pass 11 a category id is any string: the five built-ins below keep
+// their ids as the seed of the persisted category store, and user-made ones
+// get a nanoid. Nothing in a persisted event or todo row had to change.
+export type CategoryId = string;
 
 export interface Category {
-  id: CategoryId;
+  id:    string;
   label: string;
-  color: string;
+  color: string;           // #RRGGBB — the stroke / label colour; `bg` is derived from it
+  // Optional time range, minutes from midnight (0–1439). Shown in Settings and
+  // drawn as a faint band on the Day grid. Both present or both absent.
+  startMinute?: number;
+  endMinute?:   number;
+}
+
+// What every lookup hands back: the stored fields plus the translucent fill.
+export interface ResolvedCategory extends Category {
   bg: string;
 }
 
+// The seed for `useCategoryStore` on a fresh install. Not a lookup table —
+// resolve ids through the store (`useCategory` / `resolveCategory`) so user
+// categories and deleted ones are handled.
 export const CATEGORIES: Category[] = [
-  { id: 'deep',     label: 'Deep Work', color: '#F59E0B', bg: 'rgba(245,158,11,0.18)'  },
-  { id: 'meeting',  label: 'Meeting',   color: '#38BDF8', bg: 'rgba(56,189,248,0.18)'  },
-  { id: 'admin',    label: 'Admin',     color: '#A78BFA', bg: 'rgba(167,139,250,0.18)' },
-  { id: 'break',    label: 'Break',     color: '#34D399', bg: 'rgba(52,211,153,0.18)'  },
-  { id: 'personal', label: 'Personal',  color: '#FB923C', bg: 'rgba(251,146,60,0.18)'  },
+  { id: 'deep',     label: 'Deep Work', color: '#F59E0B' },
+  { id: 'meeting',  label: 'Meeting',   color: '#38BDF8' },
+  { id: 'admin',    label: 'Admin',     color: '#A78BFA' },
+  { id: 'break',    label: 'Break',     color: '#34D399' },
+  { id: 'personal', label: 'Personal',  color: '#FB923C' },
 ];
+
+// Swatches offered when a category is created or edited. Design data, not
+// tokens: the first five are the seed colours so the built-ins round-trip.
+export const CATEGORY_PALETTE = [
+  '#F59E0B', '#38BDF8', '#A78BFA', '#34D399', '#FB923C',
+  '#FB7185', '#F472B6', '#A3E635', '#2DD4BF', '#818CF8',
+  '#F87171', '#FACC15',
+] as const;
 
 export const PRIORITIES = [
   { id: 'high', label: 'High',   color: '#f87171' },

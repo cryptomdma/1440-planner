@@ -29,6 +29,8 @@ interface TodoState {
   // in `repeat.exceptions` (done dates) and the base row's status is untouched
   // apart from clearing its calendar link; for a plain todo it is ignored.
   setDone:              (todoId: string, done: boolean, date?: string) => void;
+  // Every todo on category `from` moves to `to` (category deletion).
+  reassignCategory:     (from: string, to: string) => void;
 }
 
 export const useTodoStore = create<TodoState>()(
@@ -74,6 +76,11 @@ export const useTodoStore = create<TodoState>()(
             }
             return { ...t, status: done ? ('done' as const) : ('pending' as const) };
           }),
+        })),
+
+      reassignCategory: (from, to) =>
+        set(s => ({
+          todos: s.todos.map(t => (t.categoryId === from ? { ...t, categoryId: to } : t)),
         })),
     }),
     {
