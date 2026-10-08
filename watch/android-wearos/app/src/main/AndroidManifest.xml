@@ -125,6 +125,28 @@
                 android:value="60" />
         </service>
 
+        <!--
+          Block arcs (pass 12a): today's blocks drawn into a 450x450 bitmap on the watch and
+          shown by the WFF face through a full-face image slot. UPDATE_PERIOD_SECONDS 0 —
+          the Data Layer push redraws it via requestUpdateAll(), like the count gates.
+        -->
+        <service
+            android:name=".BlockArcsComplicationService"
+            android:exported="true"
+            android:icon="@drawable/ic_1440"
+            android:label="1440 block arcs"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SMALL_IMAGE,PHOTO_IMAGE" />
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
+        </service>
+
         <!-- Wearable Data Layer listener: DataItems and Messages under /1440 from the phone -->
         <service
             android:name=".DataLayerClient"

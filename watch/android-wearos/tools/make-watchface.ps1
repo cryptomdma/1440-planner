@@ -45,6 +45,31 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine('    <Metadata key="PREVIEW_TIME" value="10:08:32" />')
 [void]$sb.AppendLine('    <Scene backgroundColor="#FF07090F">')
 
+# Slot 4: today's blocks as arcs. WFF cannot loop over the snapshot, so the arcs are drawn
+# on the WATCH into a 450x450 bitmap by BlockArcsComplicationService (app/) and shown here
+# through an image slot covering the whole face. Emitted FIRST so the ring, ticks, sweep
+# and hand draw on top of it. isCustomizable=FALSE and a fixed provider: the user never
+# sees this as a slot.
+#
+# Spike (pass 12a): two full-face probe slots at once, so one screenshot tells which image
+# type this runtime shows untinted and unscaled. The source draws red/green/blue at the
+# block radius for SMALL_IMAGE and magenta/yellow/cyan further in for PHOTO_IMAGE.
+$imageSlots = @(
+  @{ slot = 4; type = 'SMALL_IMAGE'; expr = '[COMPLICATION.SMALL_IMAGE]'; name = 'Block arcs' },
+  @{ slot = 5; type = 'PHOTO_IMAGE'; expr = '[COMPLICATION.PHOTO_IMAGE]'; name = 'Block arcs (photo probe)' }
+)
+foreach ($s in $imageSlots) {
+  [void]$sb.AppendLine("        <ComplicationSlot slotId=`"$($s.slot)`" x=`"0`" y=`"0`" width=`"450`" height=`"450`" displayName=`"$($s.name)`" supportedTypes=`"$($s.type)`" isCustomizable=`"FALSE`">")
+  [void]$sb.AppendLine('            <BoundingOval x="0" y="0" width="450" height="450" />')
+  [void]$sb.AppendLine("            <DefaultProviderPolicy primaryProvider=`"com.planner1440.app/com.planner1440.watchface.BlockArcsComplicationService`" primaryProviderType=`"$($s.type)`" />")
+  [void]$sb.AppendLine("            <Complication type=`"$($s.type)`">")
+  [void]$sb.AppendLine('                <PartImage x="0" y="0" width="450" height="450">')
+  [void]$sb.AppendLine("                    <Image resource=`"$($s.expr)`" />")
+  [void]$sb.AppendLine('                </PartImage>')
+  [void]$sb.AppendLine('            </Complication>')
+  [void]$sb.AppendLine('        </ComplicationSlot>')
+}
+
 # Outer ring
 $rr = $r + $r * 0.125
 [void]$sb.AppendLine('        <PartDraw x="0" y="0" width="450" height="450">')

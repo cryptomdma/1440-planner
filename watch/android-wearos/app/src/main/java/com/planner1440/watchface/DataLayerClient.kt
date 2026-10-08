@@ -40,6 +40,7 @@ class DataLayerClient : WearableListenerService() {
             CountDownComplicationService::class.java,
             MinuteCounterComplicationService::class.java,
             NextBlockComplicationService::class.java,
+            BlockArcsComplicationService::class.java,   // redraws the arcs bitmap (pass 12a)
         )
     }
 
