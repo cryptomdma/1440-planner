@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import type { CalendarEvent, Category } from '@1440/core';
-import { eventsOnDate, minuteToTimeStr, resolveCategory } from '@1440/core';
+import { eventsOnDate, hasRange, minuteToTimeStr, resolveCategory } from '@1440/core';
 import WearableDataLayer from '../../modules/wearable-data-layer';
 
 export interface WatchSnapshot {
@@ -18,6 +18,11 @@ export interface WatchSnapshot {
   }>;
   currentBlock?: { title: string; endsAt: number };
   nextBlock?:    { title: string; startsAt: number; timeStr: string };
+  // Category time ranges (pass 12): the watch draws each as a thin arc on its outer
+  // ring, in the category's colour. Appended after the fields the watch already
+  // reads — it reads JSON by key and ignores unknowns, so an older watch build is
+  // unaffected and `version` stays 1.
+  ranges: Array<{ startMinute: number; endMinute: number; color: string }>;
 }
 
 export function buildWatchSnapshot(params: {
@@ -62,6 +67,11 @@ export function buildWatchSnapshot(params: {
     nextBlock: nextBlock
       ? { title: nextBlock.title, startsAt: nextBlock.startMinute, timeStr: minuteToTimeStr(nextBlock.startMinute) }
       : undefined,
+    ranges: categories.filter(hasRange).map(c => ({
+      startMinute: c.startMinute,
+      endMinute:   c.endMinute,
+      color:       c.color,
+    })),
   };
 }
 
