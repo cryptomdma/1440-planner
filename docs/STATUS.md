@@ -33,16 +33,17 @@ user data:** a fourth persisted store seeded with the five built-ins, add / edit
 from Settings (delete reassigns the category's blocks and tasks), one colour per category
 with the fill derived from it, an optional time range per category drawn as a band on the
 Day grid, and every lookup through one helper with a visible `Uncategorised` fallback.
-**Pass 12a (2026-10-08) built the watch-side arc renderer and its two full-face probe
-slots but could not verify them: the watch slept through the whole session and nothing
-over adb wakes a slept Galaxy Watch.** The code is on `feat/watch-arcs`, builds clean, and
-is left in *spike* mode so the next session starts by installing it and reading the probe
-off a screenshot.
+**Pass 12a (2026-10-08, two sessions) put per-block arcs on the real watch face:** a fifth
+complication data source on the watch draws one `Canvas.drawArc` per block from the
+snapshot into a 450×450 bitmap, and the Watch Face Format face shows it through a
+full-face `SMALL_IMAGE` slot under the ring and hand — verified on the Galaxy Watch 7 with
+the owner's real blocks, exact colours, right angles. The one unknown (which image slot
+type renders untinted) is settled: `SMALL_IMAGE`, and `PHOTO_IMAGE` is refused outright.
 Nineteen PRs have merged, #19 among them (`6096689`); **five PRs are open and stacked**:
 `chore/sdk-upgrade` (PR #20, pass 7), `feat/repeat-rules` (PR #21, passes 8 and 8.5, on
 #20), `feat/tasks-edit` (PR #22, pass 9, on #21), `feat/schedule-view` (PR #23, pass 10,
 on #22) and `feat/categories` (PR #24, pass 11, on #23), plus a **sixth branch pushed
-without a PR yet**: `feat/watch-arcs` (pass 12a, on #24 — the session could not read the
+without a PR yet**: `feat/watch-arcs` (pass 12a, on #24 — sessions can no longer read the
 GitHub token; the owner opens it, body in the pass-12a log). Merge in that order. The
 owner's feature backlog is staged as passes 12–13 under **Next up**.
 
@@ -148,7 +149,7 @@ on), four tabs
 | Area | State |
 |---|---|
 | **Watch sync transport — iOS** | `syncIOS()` in `apps/mobile/src/services/watchSync.ts` is a `console.log` stub; no WatchConnectivity module and no iOS build path. **Android is done** — see ✅ Working. |
-| **Wear OS watch face** | **Builds, installs, renders and receives live data (passes 5–6, reworked in 8.5).** `watch/android-wearos` = `:app` (`com.planner1440.app`: Data Layer listener + four complication data sources + the androidx Canvas face, which **Wear OS 6 blocks outright**) and `:wff` (`com.planner1440.wff`: the no-code Watch Face Format face that actually shows). Draws ring, 96 ticks, 24 h sweep, minute hand, the minute figure and the wall clock **from the watch's own clock**; the phone supplies only the count mode and the current/next block. **Still no per-block arcs** (Known debt, Next up #12a). |
+| **Wear OS watch face** | **Builds, installs, renders and receives live data (passes 5–6, reworked in 8.5).** `watch/android-wearos` = `:app` (`com.planner1440.app`: Data Layer listener + four complication data sources + the androidx Canvas face, which **Wear OS 6 blocks outright**) and `:wff` (`com.planner1440.wff`: the no-code Watch Face Format face that actually shows). Draws ring, 96 ticks, 24 h sweep, minute hand, the minute figure and the wall clock **from the watch's own clock**; the phone supplies the count mode, the current/next block and the block list. **Per-block arcs since pass 12a:** `BlockArcsComplicationService` paints them into a full-face `SMALL_IMAGE` bitmap (slot 4, under everything). Still to come: the category ring and count-mode colour outside the centre figure (Next up #12). |
 | **watchOS face** | Real Swift (`WatchFaceView.swift`, `WatchConnectivityManager.swift`, …) but **no `.xcodeproj` / `Package.swift` / `Info.plist`** — cannot compile. |
 | **Backend** | `backend/supabase/` is three **0-byte** files. No `config.toml`, no client dependency. Directory names only. |
 | **`docs/API_SPEC.md`** | Intentionally left empty — there is no backend to spec yet. |
@@ -172,20 +173,24 @@ split bundle`, surfaced as "Possible unhandled promise rejection"). Pass 4 hit t
 `useCalendarStore.deleteEvent` — the todo unlink silently never ran. Use static imports;
 there are no cycles between the stores. Recorded in `CLAUDE.md`.
 
-**The WFF face still cannot draw per-block arcs.** Watch Face Format has no loop and no way
-to instantiate N shapes from data, so the face shows the 24-hour sweep, the minute hand, the
-minute figure, the clock and the current/next block — but nothing per block. The data is
-already on the wrist (the snapshot carries every block's start, duration and resolved hex
-colour), so this is purely a rendering gap. The Canvas renderer that *can* draw them is
-blocked by Wear OS 6 on this hardware. **Plan, from the pass-8.5 findings:** render the arcs
-to a bitmap on the *watch* — `DataLayerClient` already holds the JSON and already runs
-complication sources, so it is a `Canvas.drawArc` loop in one more source — and show it
-through a full-face image complication slot. Gated on a spike: whether a `SMALL_IMAGE` /
-`PHOTO_IMAGE` slot covering all 450×450 renders untinted. See Next up #12a. **Pass 12a
-wrote both halves** — `BlockArcsComplicationService.kt` (the `drawArc` loop, both image
-types, `NoData` when there is nothing) and slots 4 / 5 in the generator — **but could not
-run the spike**: the watch was asleep for the whole session. Still open until a screenshot
-says which slot type renders.
+*Fixed in pass 12a (kept for context):* **the WFF face could not draw per-block arcs.**
+Watch Face Format has no loop and no way to instantiate N shapes from data, and the Canvas
+renderer that can is blocked by Wear OS 6. Resolved by drawing them on the *watch* in one
+more complication data source (`BlockArcsComplicationService`, a `Canvas.drawArc` loop over
+the snapshot in `SharedPreferences`) and showing the 450×450 bitmap through a full-face
+`SMALL_IMAGE` slot emitted first in the Scene. The spike that gated it is answered:
+`SMALL_IMAGE` with `SmallImageType.PHOTO` renders untinted and at exact scale on the Galaxy
+Watch 7; `PHOTO_IMAGE` is refused by WearServices and never binds. **One limit to keep in
+mind:** that bitmap is redrawn only on a snapshot push (`requestUpdateAll()`) or a face
+reload, so only static art may move into it — the hand, sweep and figure must stay WFF.
+
+**The arcs bitmap is only as fresh as the last snapshot.** Same root as the backgrounded
+resync item below: the phone pushes on change, once a minute while foregrounded, and on
+foreground; with the app closed the arcs show the last pushed day until the next push
+(the renderer does not check the snapshot's `date`, so yesterday's blocks stay up past
+midnight until the phone sends today's). A watch-side `date` check in
+`BlockArcsComplicationService` returning `NoData` after midnight is a two-line follow-up;
+a watch-side daily alarm to re-request would close it fully.
 
 *Fixed in pass 8.5 (kept for context):* the minute figure used to be a number the phone's
 complication sent, so it was only as fresh as the last complication update —
@@ -203,8 +208,10 @@ a value the phone sent. The one observable bit is whether a slot has data at all
 switch works (two slots in the same box, gating each other). Complication expressions are
 also scoped to their own slot, so **nothing outside a `<ComplicationSlot>` can be styled
 from phone data**: that is why the ring, ticks and hand stay amber in both count modes while
-the centre figure changes colour. Completing that needs the same full-face slot the arcs
-plan introduces — see Next up #12a.
+the centre figure changes colour. Since pass 12a there is a full-face bitmap slot the
+watch app paints, so *static* art (ring, ticks) can be drawn there in the count-mode colour
+— but the hand and sweep cannot move into it, because the bitmap only refreshes on a
+snapshot push, and they must tick on their own. See Next up #12.
 
 **`<DigitalClock>` / `<TimeText>` renders nothing on this runtime.** Silently: no parse
 error, no log line, the element is simply absent. Tried `hh:mm`, `h:mm a` and `HH:mm`, with
@@ -366,9 +373,9 @@ The owner's feature notes (2026-09-24) are merged into this list and staged as p
 The ordering has two hard constraints: **categories must precede the watch rings** (the
 outer ring is driven by category time ranges — building the rings first means building
 them twice), and **the repeat rework should land early**, while the only repeating data
-in existence is disposable test data. The first constraint is weaker since pass 8.5: it
-assumed hand-authored WFF elements, and the arcs plan in 12a draws on a Canvas instead,
-where adding the category ring later is a few more calls rather than a rebuild.
+in existence is disposable test data. The first constraint is moot since pass 12a: the
+arcs are drawn on a Canvas on the watch, so the category ring is a few more draw calls in
+the same renderer rather than a rebuild.
 
 7. ~~**SDK upgrade off 51.**~~ **Done in pass 7** (PR #20) — SDK 51 → **57**, not the 55 the
    old handoff guessed at, because 57 is the current SDK. Dependency rot, the
@@ -389,31 +396,24 @@ where adding the category ring later is a few more calls rather than a rebuild.
     lookup helper with an `Uncategorised` fallback (Decisions on record). The watch needed
     no change. The ranges are display-only today — they shade, they do not constrain
     placement or AUTO.
-12. **Watch face rings** — the per-block arcs Known debt, in the owner's two-ring form:
-    a thin outer ring for category time ranges, thicker inner rings for actual blocks.
-    The *category* ring's data now exists (11 is done: `startMinute`/`endMinute` on each
-    category, colour resolved on the phone) but the snapshot does not carry it yet — add a
-    `ranges: [{startMinute, endMinute, color}]` array to `WatchSnapshot` when 12a's
-    renderer is in place.
-12a. **Watch block arcs** (new after pass 8.5; can be done any time, does not need 11).
-    Render today's blocks as coloured arcs on the real face. WFF cannot draw them, so:
-    a new complication data source on the *watch* draws the arcs onto a `Bitmap` with
-    `Canvas.drawArc` from the snapshot already in `SharedPreferences`, and the face shows
-    it through an image complication slot covering the full 450×450 behind the hand. No
-    phone changes at all — the snapshot already carries every block's start, duration and
-    hex colour. **Spike first:** confirm a `SMALL_IMAGE` / `PHOTO_IMAGE` slot at full face
-    size renders untinted on the Galaxy Watch 7; that is the one unknown. Pass 8.5 already
-    proved the neighbouring mechanics (a full-size slot with `isCustomizable="FALSE"`
-    binds, and EMPTY slots simply do not render). **This also unblocks the rest of the
-    colour work:** a full-face slot is the only scope from which phone data can style the
-    ring, ticks and hand, so count-mode colour for the whole face comes with it — and it
-    makes 12's category ring a few more draw calls in the same renderer rather than a
-    second build-out, which weakens the "11 must precede 12" ordering below.
-    **In progress — pass 12a (2026-10-08) wrote the source, the manifest entry, the
-    `requestUpdateAll()` hook and the two probe slots (`feat/watch-arcs`, builds clean,
-    `SPIKE = true`), but the watch never woke, so the spike is still unrun.** Resume with
-    the handoff at the end of this file: install, screenshot, read off which slot
-    rendered, flip the constant, drop the losing slot, verify the renderer.
+12. **Watch face category ring + count-mode colour** — the rest of the owner's two-ring
+    form now that the block arcs (12a) are on the face: a thin outer ring for category time
+    ranges, drawn in the same `BlockArcsComplicationService` bitmap a few pixels outside
+    the block arcs. Needs the phone for the first time: add a
+    `ranges: [{startMinute, endMinute, color}]` array to `WatchSnapshot` in
+    `apps/mobile/src/services/watchSync.ts` (from `useCategoryStore`, only categories with
+    `hasRange`), bump nothing — the watch reads JSON by key and ignores what it does not
+    know. Watch-only in the same pass: paint the ring and the 96 ticks into the bitmap in
+    the count-mode colour (`countMode` is in the snapshot) and drop them from the WFF;
+    **the hand, the 24 h sweep and the figure stay WFF**, because the bitmap only redraws
+    on a snapshot push. Also fold in the midnight staleness check from Known debt (return
+    `NoData` when the snapshot's `date` is not today).
+12a. ~~**Watch block arcs.**~~ **Done in pass 12a** (`feat/watch-arcs`, PR to be opened by
+    the owner, stacked on #24) — `BlockArcsComplicationService` on the watch draws one
+    arc per block from the snapshot into a 450×450 bitmap, shown through a full-face
+    `SMALL_IMAGE` slot (4) emitted first in the Scene. Spike answered on the Galaxy
+    Watch 7: `SMALL_IMAGE`/PHOTO renders untinted at exact scale; `PHOTO_IMAGE` is refused
+    by WearServices. No phone changes. Verified with the owner's real blocks.
 
 13. **12/24-hour clock setting** (scheduled 2026-09-25, when the watch face clock went
     24-hour by decision). One setting, two displays: the phone formats every time through
@@ -440,6 +440,98 @@ Not staged, deliberately:
 ---
 
 ## Session log
+
+### 2026-10-08 (evening) — Pass 12a resumed: spike run, arcs verified on the wrist (branch `feat/watch-arcs`, PR to be opened by the owner, stacked on #24)
+Same branch, two more commits on top of `0253d81`. Watch-only; no phone JS, no phone
+rebuild; Metro (node PID 33668) and the phone (`192.168.1.107:5555`) left alone. Disk
+26.8 GB free. **The watch was reachable this time, on a new address:** it had rebooted
+since the morning (uptime 21 h at 19:18), came up on DHCP lease `192.168.1.109` with a
+wireless-debugging port (`:36541`, auto-listed by mDNS as `offline`), and a disconnect +
+connect pair brought it to `device` on the second try. Re-pinned with `tcpip 5555` →
+**`192.168.1.109:5555`**; `KEYCODE_WAKEUP` + `screen_off_timeout 1800000` in the same
+call; `deviceLocked=0`; 36 % battery, off the charger, and it held for the whole session
+(put back to `60000` at the end).
+
+**Spike result (19:19, screenshot zoomed, pixels sampled with `System.Drawing`):**
+- Slot 4 `SMALL_IMAGE` (`SmallImageType.PHOTO`): **renders untinted and at exact
+  full-face scale.** Pixels at the block radius read `(255,0,0)`, `(0,255,0)`, `(0,0,255)`
+  at 7 h, 13 h, 19 h — the probe's exact hues, no tint, no letterboxing — and the ring,
+  ticks, sweep and hand drew over them (the hand at 19:20 crossed the blue 18–20 h arc on
+  top). Logcat: `1440:BlockArcs: spike pattern for SMALL_IMAGE` then
+  `DWF:WearComplicationProvider: [11:SMALL_IMAGE] …BlockArcsComplicationService`.
+- Slot 5 `PHOTO_IMAGE`: **never binds.** WearServices logs
+  `[ComplicationPackageChecker] Unexpected complication data type PHOTO_IMAGE` on every
+  activation, the favourite's slot 12 has `providerComponent=null`, the runtime reports
+  `[12:NOT_CONFIGURED]`, and no `spike pattern for PHOTO_IMAGE` line ever appears. The inner
+  radius sampled background `(7,9,15)`. So the answer is SMALL_IMAGE, decisively.
+
+**What shipped (built, installed on the watch, verified).**
+- `BlockArcsComplicationService.kt` — `SPIKE = false`, `IMAGE_TYPES = {SMALL_IMAGE}`,
+  `wrap()` builds only `SmallImageComplicationData` (the `PhotoImageComplicationData`
+  branch and import are gone), `spikeBitmap()` kept as the one-pattern probe with the
+  result written into its doc comment.
+- `AndroidManifest.xml` — `SUPPORTED_TYPES` is `SMALL_IMAGE` only, with the reason.
+- `tools/make-watchface.ps1` → `watchface.xml` — `$imageSlots` is slot 4 alone; the
+  header comment no longer says arcs are impossible. The XML parses and lists slots 4, 1,
+  3, 2, which the runtime logs as `[11]`…`[14]`.
+- `watch/android-wearos/README.md` — module table, data-path diagram, the arcs paragraph
+  (now a description, not a plan), two new runtime findings (image slots; what may and may
+  not move into the bitmap), slot renumbering.
+
+**Verification.** (1) `adb devices` lists `192.168.1.109:5555`, timeout 1800000,
+`deviceLocked=0` ✅. (2) Spike screenshot as above ✅. (3) Renderer with the real snapshot
+on the wrist (dated 2026-10-07: `Daily Huddle` 450/15 `#38BDF8`, `Pick up trucks` 540/60
+`#A3E635`): logcat `1440:BlockArcs: drew 2/2 arcs for SMALL_IMAGE`; sampled pixels at
+minute 457 → `(41,136,178)` and at 570/595 → `(115,163,42)`/`(116,164,41)`, against the
+computed 0.7-alpha blends `(41,135,178)` and `(116,164,42)` over the `#07090F` background;
+minutes 440, 470, 530 and 610 (just outside each block) read background ✅. (4) A face
+switch away-and-back re-queried the source (`requestUpdateFromProvider … BlockArcs` →
+`drew 2/2` → `[11:SMALL_IMAGE]`); no phone push happened this session (the phone app was
+not foregrounded, snapshot still dated 10-07) ✅ via the face-switch path. (5) One figure:
+`[12:SHORT_TEXT] CountUp "1163" / "MIN ELAPSED"`, `[13:NO_DATA]` for CountDown; slot 2
+empty because the 10-07 snapshot has no next block at 19:23 — correct ✅. (6) Gradle clean
+(24 s cold daemon, 11 s warm); `tsc --noEmit` clean on `apps/mobile` and `packages/core` ✅.
+No `TransactionTooLargeException` anywhere in the capture.
+
+**Found on the way**
+- The watch's address is not stable across reboots either (`.68` → `.109`); after a
+  reboot it shows up in `adb devices` on its own as an `offline` mDNS entry with a
+  wireless-debug port — `adb disconnect` + `adb connect` on *that* entry is enough, no
+  pairing code was needed this time. Try that before asking the owner.
+- Because the bitmap refreshes only on a push or a face reload, the arcs will show a stale
+  day after midnight with the phone app closed (the snapshot on the wrist is still
+  yesterday's). Recorded under Known debt; the two-line `date` check belongs in #12.
+- Moving the ring/ticks/hand into the bitmap for count-mode colour, which the handoff
+  offered as a stretch, was **not** done: the hand and sweep must tick on their own and the
+  bitmap cannot, so only the static art qualifies — folded into #12 with that constraint
+  rather than half-done here.
+
+**Commits.** `4a835bc` (the spike) is **kept**, not squashed — its message says what it
+was and the probe result is the useful history. New: `feat(watch): block arcs drawn into
+a full-face image complication` and this docs commit.
+
+**PR body to paste (title `feat(watch): block arcs drawn into a full-face image
+complication`), at `https://github.com/cryptomdma/1440-planner/pull/new/feat/watch-arcs`:**
+> Stacked on `feat/categories` (#24); merge after it. Watch-only: no phone changes.
+> Today's blocks now appear as coloured arcs on the real Galaxy Watch 7 face. WFF has no
+> loop, so `BlockArcsComplicationService` (new, in `app/`) runs the `Canvas.drawArc` loop
+> on the watch over the snapshot already in `SharedPreferences` — one arc per block in the
+> hex colour the phone resolved, 0.7 alpha, at the preview's radius — and returns a
+> 450×450 bitmap as a `SMALL_IMAGE` (`PHOTO`); `NoData` when there is nothing to draw. The
+> WFF face gains `slotId="4"`, a full-face `isCustomizable="FALSE"` slot emitted first in
+> the Scene so ring, ticks, sweep and hand draw over it; `DataLayerClient` re-requests it
+> on every snapshot. Spike (first commit) answered on-device: `SMALL_IMAGE` renders
+> untinted at exact scale, `PHOTO_IMAGE` is refused by WearServices — so only
+> `SMALL_IMAGE` ships. Verified with the owner's real blocks: `drew 2/2 arcs`, sampled
+> pixels match the expected blends, one count figure, slot 2 unchanged; Gradle and `tsc`
+> clean. Known limit (documented): the bitmap refreshes on push/reload only, so with the
+> phone app closed it can show yesterday's arcs after midnight — date check slated for #12.
+
+**Not done / caveats**
+- No phone-push refresh observed this session (phone app not foregrounded); the
+  face-switch path, which calls the same `requestUpdateAll()`, was.
+- Count-mode colour of the ring/ticks and the category ring: #12.
+- No PR number yet (above).
 
 ### 2026-10-08 — Pass 12a: watch block arcs — renderer + probe slots written, spike NOT run (branch `feat/watch-arcs`, no PR yet, stacked on #24)
 Branch `feat/watch-arcs`, **branched from `feat/categories` (`788c4f8`), not `main`** —
@@ -1522,122 +1614,138 @@ confirmed afterwards that `npx expo run:android` builds and launches on a physic
 
 ---
 
-## 🤝 Handoff prompt (pass 12a, resumed)
+## 🤝 Handoff prompt (pass 12)
 
 > Standing rule (`CLAUDE.md` → Session workflow): every session ends by replacing this
 > section with the *next* session's prompt, in this format. Paste the block below as the
 > opening message of the next session.
 
-# 1440 Planner — Pass 12a (resumed): run the arc spike on the watch, then finish the renderer
+# 1440 Planner — Pass 12: category ring + count-mode colour in the arcs bitmap
 
-Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-10-08.
+Read `CLAUDE.md` and `docs/STATUS.md` first. Both are current as of 2026-10-08 (evening).
 
-**State you inherit.** Pass 12a's first session wrote the whole thing but never reached the
-watch. Branch **`feat/watch-arcs`** (pushed, one commit `4a835bc` on top of
-`feat/categories` `788c4f8`, plus a docs commit) holds: `BlockArcsComplicationService.kt`
-(the renderer, both image types, `NoData` when empty, **`const val SPIKE = true`**), its
-manifest entry, its line in `DataLayerClient.COMPLICATION_SERVICES`, and two full-face
-probe slots (4 = `SMALL_IMAGE`, 5 = `PHOTO_IMAGE`) in `tools/make-watchface.ps1` →
-`watchface.xml`. It builds clean. **Nothing is installed on the watch yet** — it still runs
-the pass-8.5 face. `git checkout feat/watch-arcs; git pull` and continue on it. Check
-`git log origin/main --oneline | head` first: if #20–#24 merged meanwhile, rebase onto
-`main` is the owner's call — do **not** do it yourself; keep stacking.
+**State you inherit.** Pass 12a is done and verified on the wrist: `feat/watch-arcs`
+(pushed; `4a835bc` spike, the feat commit, two docs commits, on top of `feat/categories`
+`788c4f8`) has `BlockArcsComplicationService.kt` drawing one arc per block into a 450×450
+bitmap that the WFF face shows through full-face slot 4 (`SMALL_IMAGE`). **The watch runs
+that build now** (installed 2026-10-08 19:23). `PHOTO_IMAGE` is refused by this runtime —
+do not revisit. **Branch for this pass:** `git checkout feat/watch-arcs; git pull; git
+checkout -b feat/watch-category-ring` (keep stacking; `git log origin/main --oneline |
+head` first — if #20–#24 and the arcs PR merged meanwhile, rebasing is the owner's call,
+not yours). This pass touches **both** halves: the phone (`watchSync.ts` gains a field)
+and the watch (the renderer draws two more things). The phone side is JS-only — no native
+rebuild; the installed app (2026-09-24) + the running Metro serve it.
 
-**No PR exists yet.** The session could not read the GitHub token (the Claude Code
-classifier now refuses `git credential fill` — "Credential Materialization"), so the PR
-is opened by the owner at `https://github.com/cryptomdma/1440-planner/pull/new/feat/watch-arcs`
-with the body in the pass-12a log. If it is still not open when you finish, print an
-updated body in the chat for the owner rather than retrying the token recipe.
+**PR state.** The arcs PR may or may not be open yet — the owner opens it at
+`https://github.com/cryptomdma/1440-planner/pull/new/feat/watch-arcs` with the body in the
+pass-12a (evening) log. Sessions cannot read the GitHub token any more (classifier refuses
+`git credential fill`); do not retry it. For this pass, push and print the body for
+`pull/new/feat/watch-category-ring` in the chat and in the log.
 
-## Prerequisites — the watch is the whole risk
+## Prerequisites
 
-1. **Before writing anything, get the watch.** Last session `adb connect 192.168.1.68:5555`
-   timed out ~60 times over 30 min; the watch was paired to the phone over BT (so nearby)
-   but had parked its Wi-Fi with the screen off, and **nothing over adb wakes it** — not a
-   phone notification, not Galaxy Wearable's Find My Watch (that path stops at a Samsung
-   privacy-notice dialog only the owner may accept). So: **ask the owner at the start to
-   tap the watch awake or set it on the charger below 100 %**, then in **one** PowerShell
-   call: `adb connect 192.168.1.68:5555`, `input keyevent KEYCODE_WAKEUP`, `settings put
-   system screen_off_timeout 1800000`, `dumpsys trust | findstr deviceLocked`. If the pin
-   is gone (watch rebooted → wireless-debug port), the owner has to do the pairing-code
-   round once; re-issue `tcpip 5555` over that link. Put `60000` back at the end.
-2. Disk: 26.9 GB free at the end of last session; `(Get-PSDrive C).Free` anyway.
-3. Phone `192.168.1.107:5555` answered all session; Metro node PID 33668 on :8081 — leave
-   both alone, the pass is watch-only. The owner left the phone on a Settings screen.
-4. Scratch helpers from last session are gone with the scratchpad; the recipe is in
-   `device-and-tooling` (install both APKs with `adb -s <watch> install -r`, two
-   `DEBUG_SURFACE` broadcasts to reload the face, `screencap` + `System.Drawing` zoom,
-   unfiltered `logcat -v time` to a file and grep `1440:|DWF:|BlockArcs`).
+1. **Watch first.** It moved to **`192.168.1.109`** after a reboot (was `.68`), re-pinned to
+   `:5555` on 2026-10-08. One PowerShell call: `adb connect 192.168.1.109:5555`, then on
+   `-s 192.168.1.109:5555`: `input keyevent KEYCODE_WAKEUP`, `settings put system
+   screen_off_timeout 1800000`, `dumpsys trust | grep deviceLocked`. If `.109:5555` times
+   out, look at `adb devices` *before* asking the owner: after a reboot the watch lists
+   itself as an `offline` mDNS entry with a wireless-debug port (`192.168.1.1xx:3xxxx`) —
+   `adb disconnect <that>; adb connect <that>` (twice if needed) brings it to `device`
+   with no pairing code, then `adb -s <that> tcpip 5555` re-pins it. If nothing is listed
+   at all it is asleep with Wi-Fi parked and only the owner's tap helps. Put `60000` back
+   at the end. Battery was 38 % off the charger; it held 3 sessions' worth at that.
+2. Phone `192.168.1.107:5555` (plus a stray `:44047` mDNS entry — always `-s …:5555`);
+   Metro node PID 33668 on :8081, bundles from disk — reuse it, `am force-stop` + launch
+   picks up core/JS edits. `adb reverse tcp:8081 tcp:8081` after any reinstall.
+3. Disk: 26.8 GB free at the end of 12a; `(Get-PSDrive C).Free` anyway.
+4. Start an unfiltered watch logcat to a file at once (`Start-Process adb -ArgumentList
+   '-s',$w,'logcat','-v','time' -RedirectStandardOutput <file>`); grep
+   `1440:|DWF:WearComplicationProvider|BlockArcs`.
 
 ## Goal
 
-1. **Run the spike** (`cd watch\android-wearos; .\gradlew :app:assembleDebug
-   :wff:assembleDebug`, install both, reload the face, `deviceLocked=0`, screenshot).
-   Read off: **red / green / blue at the block radius** = slot 4 `SMALL_IMAGE` renders;
-   **magenta / yellow / cyan further in** = slot 5 `PHOTO_IMAGE` renders. Untinted means
-   those exact hues; a tinted runtime shows them all in one colour (amber / white), and
-   letterboxing shows them shrunk or offset. Record which in the session log. The DWF log
-   lines for the new slots appear as `[1x:SMALL_IMAGE]` / `[1x:PHOTO_IMAGE]` (the runtime
-   renumbers slots in declaration order, so 4 and 5 are `[11]` and `[12]` now and the old
-   `[11]`/`[12]`/`[13]` shift to `[13]`/`[14]`/`[15]`). If **neither** renders untinted:
-   write that under Known debt, revert the generator to one slot, keep the service
-   (harmless), and switch to **#13** (12/24-hour clock) for the rest of the session.
-2. **Finish the renderer**: set `SPIKE = false`, keep only the winning slot (drop the other
-   from `$imageSlots` and from `SUPPORTED_TYPES` — or keep both types in the manifest, it
-   costs nothing), regenerate, rebuild, reinstall, reload. Verify against the snapshot on
-   the wrist (`run-as com.planner1440.app cat shared_prefs/1440_watch.xml`); if it is stale
-   or empty, push a test one with the `run-as cp` recipe — `Daily Huddle` is 7:30 AM, 15
-   min, `#38BDF8` (450 / 15). One arc per block, right angle, right colour, under the
-   hand; the count-mode figure and slot 2 still show exactly one headline.
-3. If time remains: the category ring (#12) needs the phone (`ranges` field in
-   `watchSync.ts`) — **leave it**; count-mode colouring of the ring / ticks / hand in the
-   same bitmap is watch-only and fair game, but ship the arcs first.
+1. **Phone: `ranges` in the snapshot.** In `apps/mobile/src/services/watchSync.ts`, add
+   `ranges: Array<{ startMinute: number; endMinute: number; color: string }>` to
+   `WatchSnapshot`, built from `useCategoryStore.getState().categories.filter(hasRange)`
+   with the category's resolved hex. Keep the existing fields and their order untouched —
+   the watch reads by key and ignores unknowns, so an older watch build is unaffected.
+   `_layout.tsx` already re-sends when the category store changes (pass 11) — confirm it
+   does by watching `1440:DataLayer: Received snapshot` after editing a range in Settings.
+2. **Watch: draw the ring.** In `BlockArcsComplicationService.onComplicationRequest`, after
+   the block arcs, loop `ranges` and `drawArc` each at `RING_R = R + R * 0.125` (= 202.5,
+   the outer ring's radius in `make-watchface.ps1`), stroke ~2.5, alpha ~140, butt caps.
+   Thin outer ring = categories, thicker inner arcs = blocks (the owner's two-ring form).
+3. **Watch: count-mode colour for the static art.** Paint the outer ring circle and the
+   96 ticks into the same bitmap in the count-mode colour (`countMode` is in the snapshot:
+   `"up"` → amber `#F59E0B`, `"down"` → `#38BDF8`, same alphas/widths as the generator
+   emits today), and remove those two `<PartDraw>` blocks from `make-watchface.ps1`. **Do
+   not move the 24 h sweep, the minute hand, the centre dial or the figure** — they must
+   tick on their own and the bitmap only redraws on a snapshot push. With nothing in the
+   snapshot (fresh install) the ring/ticks must still appear: draw them in amber before
+   the early `NoData` returns, i.e. the gate becomes "snapshot missing → NoData; snapshot
+   present → always a bitmap, arcs or not".
+4. **Midnight staleness** (Known debt): if the snapshot's `date` is not the watch's local
+   today, draw ring/ticks only and skip the arcs (log it). Two lines; do it here.
+5. Regenerate, rebuild, reinstall both APKs, reload the face, screenshot, sample pixels.
 
 ## Findings — do not re-derive
 
-- Service: `watch/android-wearos/app/src/main/java/com/planner1440/watchface/BlockArcsComplicationService.kt`
-  — `SIZE 450`, `ARC_R 144`, `STROKE 4.5`, `ALPHA 179`; `drawArc(c, start, dur, color,
-  radius, alpha)`; `wrap(type, bmp)` chooses `SmallImageComplicationData` (type `PHOTO`) or
-  `PhotoImageComplicationData`; `spikeBitmap(type)` is the probe. Preview data draws the
-  four `make-preview.ps1` sample arcs.
-- Generator: the `$imageSlots` loop is the first thing after `<Scene>` in
-  `tools/make-watchface.ps1`; everything else is untouched. The XML validates
-  (`[xml]` load) and lists slots 4, 5, 1, 3, 2.
-- Refresh: `DataLayerClient.kt` `COMPLICATION_SERVICES` has the new class last; a phone
-  snapshot push or a face switch away-and-back re-queries it.
-- `Icon.createWithBitmap` on a 450×450 ARGB bitmap parcels through ashmem, so the binder
-  limit is not a concern; if logcat shows `TransactionTooLargeException` anyway, switch to
-  `Icon.createWithData(pngBytes)` (mostly transparent → tiny).
-- Everything from the original pass-12a prompt about WFF slot syntax,
-  `primaryProviderType`, `NoData`-not-null and the `drawArc` angle convention still holds
-  and is baked into the code.
+- Renderer: `watch/android-wearos/app/src/main/java/com/planner1440/watchface/BlockArcsComplicationService.kt`
+  — `SIZE 450`, `R 180`, `ARC_R 144`, `STROKE 4.5`, `ALPHA 179`; `drawArc(c, start, dur,
+  color, radius, alpha)` with the `-90°` Canvas offset; `wrap()` builds
+  `SmallImageComplicationData(SmallImageType.PHOTO)`; `snapshot()` reads
+  `1440_watch/snapshot`. `getPreviewData` draws the four sample arcs — extend it with a
+  ring so the preview matches.
+- Generator: `watch/android-wearos/tools/make-watchface.ps1` — slot 4 is the `$imageSlots`
+  loop right after `<Scene>`; the outer ring `<PartDraw>` (`$rr = $r + $r*0.125`, stroke
+  `#8CF59E0B` 1.5) and the 96-tick `<PartDraw>` (major every 4th: `#E6F59E0B` 1.8, inner
+  `r − r·0.06`; minor `#B43D4F66` 0.6, inner `r + r·0.01`; outer `r + r·0.06`) are the two
+  blocks to port. Run with `powershell -NoProfile -ExecutionPolicy Bypass -File
+  tools\make-watchface.ps1`; validate with `[xml](Get-Content … -Raw)`.
+- Runtime facts (all verified 2026-10-08): slot 4 bitmap renders untinted at exact scale;
+  z-order is declaration order (slot 4 first ⇒ under everything); the runtime logs our
+  slots 4, 1, 3, 2 as `[11:SMALL_IMAGE]`, `[12]`, `[13]`, `[14]`; a face switch away and
+  back (two `DEBUG_SURFACE` broadcasts, recipe in `device-and-tooling`) re-queries every
+  source; the arcs log line is `1440:BlockArcs: drew N/M arcs for SMALL_IMAGE`.
+- Pixel check recipe: `screencap` → `System.Drawing` `GetPixel` at
+  `(240 + r·1.0667·cos θ, 240 + r·1.0667·sin θ)`, `θ = minute/1440·360 − 90`; expected
+  colour = `α·fg + (1−α)·(7,9,15)`. Pass 12a's samples matched within ±1.
+- Snapshot on the wrist is read with `run-as com.planner1440.app cat
+  shared_prefs/1440_watch.xml`; a test one is pushed with the `run-as cp` recipe.
+  `Daily Huddle` is 450/15 `#38BDF8`; the owner's `Pick up trucks` was 540/60 `#A3E635`.
+- Phone types: `WatchSnapshot` in `watchSync.ts`; categories via `useCategoryStore` /
+  `hasRange` in `packages/core/src/utils/category.ts`. `tsc --noEmit -p apps/mobile` and
+  `-p packages/core` must stay clean.
 
 ## Constraints
 
-- Watch only; `applicationId com.planner1440.app`, `app/debug.keystore`; edit the
-  generators, commit the generated XML; `NoDataComplicationData()` never `null`.
+- `applicationId com.planner1440.app`, `app/debug.keystore`; edit the generator, commit
+  the generated XML; `NoDataComplicationData()` never `null`; no dynamic `import()` in
+  core; never delete the owner's phone data.
 - Do not accept any dialog on the owner's phone or watch on their behalf.
 
 ## Verification (required)
 
-1. `adb devices` lists the watch, timeout raised, `deviceLocked=0`.
-2. Spike screenshot (zoomed) showing which probe colours rendered, at full-face scale,
-   under the hand.
-3. Renderer: one arc per block from the real snapshot at the right angle / colour.
-4. Face switch away-and-back (or a phone push) redraws; logcat shows the new slot queried.
-5. Count-mode gates and slot 2 still show one figure.
-6. `gradlew :app:assembleDebug :wff:assembleDebug` clean; `npx tsc --noEmit -p
-   apps/mobile` and `-p packages/core` (unchanged, run anyway).
+1. Watch listed, timeout raised, `deviceLocked=0`.
+2. Phone: after a category range edit, `Received snapshot` on the watch and the new
+   `ranges` key in `1440_watch.xml`.
+3. Screenshot: block arcs unchanged; a thin ring arc per ranged category at `r·1.125`;
+   ring + ticks in amber in count-up, cyan after switching to count-down in Settings
+   (the figure flips with them, as before); hand, sweep, dial, clock, slot 2 unchanged.
+4. Fresh-install path: `run-as` delete the prefs file, reload the face → ring and ticks
+   still present (amber), no arcs, no crash.
+5. Stale-date path: push a snapshot dated yesterday → ring/ticks only, log says so.
+6. Gradle clean; both `tsc` clean.
 
 ## Wrap-up
 
-- Commits: `feat(watch): block arcs drawn into a full-face image complication` (squash
-  the spike commit or keep it — say which), `docs: pass-12a …`. Push. PR: owner opens it
-  (above); print the final body in the chat, say it is stacked on #24.
-- `docs/STATUS.md`: TL;DR (six open), ✅ Working watch bullet, Known debt (strike the arcs
-  entry, amend display-strings), Next up (strike 12a, update 12), log entry, and replace
-  this section with the **pass-12 handoff** (category ring via a phone `ranges` field +
-  count-mode colour in the bitmap) — or **#13** if the owner prefers.
+- Commits: `feat(watch): category ring and count-mode colour in the arcs bitmap`,
+  `feat(watch-sync): category ranges in the snapshot` (or one commit — say which),
+  `docs: pass-12 …`. Push. Print the PR body (stacked on the arcs branch).
+- `docs/STATUS.md`: TL;DR, ✅ Working (watch sync bullet gains `ranges`; watch row), Known
+  debt (strike the midnight item; amend display-strings again — static art is now
+  coloured), Next up (strike 12; #13 is next), log entry, replace this section with the
+  **pass-13 handoff** (12/24-hour clock: decide slot-gating vs `UserConfiguration` first).
 - Print the next handoff in full in the chat, last. `screen_off_timeout` back to `60000`.
-  Update `device-and-tooling`: watch state, which image slot type rendered.
+  Update `device-and-tooling` with the watch address/pin state.
 
