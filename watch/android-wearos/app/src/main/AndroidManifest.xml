@@ -129,6 +129,8 @@
           Block arcs (pass 12a): today's blocks drawn into a 450x450 bitmap on the watch and
           shown by the WFF face through a full-face image slot. UPDATE_PERIOD_SECONDS 0 —
           the Data Layer push redraws it via requestUpdateAll(), like the count gates.
+          SMALL_IMAGE only: this runtime's WearServices rejects PHOTO_IMAGE sources
+          ("Unexpected complication data type PHOTO_IMAGE") — settled by the pass-12a probe.
         -->
         <service
             android:name=".BlockArcsComplicationService"
@@ -141,7 +143,7 @@
             </intent-filter>
             <meta-data
                 android:name="android.support.wearable.complications.SUPPORTED_TYPES"
-                android:value="SMALL_IMAGE,PHOTO_IMAGE" />
+                android:value="SMALL_IMAGE" />
             <meta-data
                 android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
                 android:value="0" />

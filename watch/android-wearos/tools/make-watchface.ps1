@@ -38,7 +38,8 @@ $sb = New-Object System.Text.StringBuilder
 [void]$sb.AppendLine('  from the WATCH clock and need no phone data. Slots 1 and 3 hold the two count-mode')
 [void]$sb.AppendLine('  variants of that figure and gate each other (only the active mode has data, so only')
 [void]$sb.AppendLine('  one renders); slot 2 carries the current or next block.')
-[void]$sb.AppendLine('  Per-block arcs are still not drawable here; see docs/STATUS.md.')
+[void]$sb.AppendLine('  Slot 4 (first, under everything) is a full-face SMALL_IMAGE the watch app paints the')
+[void]$sb.AppendLine('  per-block arcs into, since WFF itself has no loop; see BlockArcsComplicationService.kt.')
 [void]$sb.AppendLine('-->')
 [void]$sb.AppendLine('<WatchFace width="450" height="450" clipShape="CIRCLE">')
 [void]$sb.AppendLine('    <Metadata key="CLOCK_TYPE" value="ANALOG" />')
@@ -51,12 +52,14 @@ $sb = New-Object System.Text.StringBuilder
 # and hand draw on top of it. isCustomizable=FALSE and a fixed provider: the user never
 # sees this as a slot.
 #
-# Spike (pass 12a): two full-face probe slots at once, so one screenshot tells which image
-# type this runtime shows untinted and unscaled. The source draws red/green/blue at the
-# block radius for SMALL_IMAGE and magenta/yellow/cyan further in for PHOTO_IMAGE.
+# Slot type, settled by the pass-12a probe (2026-10-08, Galaxy Watch 7 / Wear OS 6):
+#   - SMALL_IMAGE with a PHOTO-type image renders UNTINTED (pure red/green/blue sampled off
+#     the screen) and at exact full-face scale when the slot and PartImage are 450x450.
+#   - PHOTO_IMAGE is refused by WearServices ("ComplicationPackageChecker: Unexpected
+#     complication data type PHOTO_IMAGE"); the provider never binds and the slot stays
+#     NOT_CONFIGURED. Do not try it again.
 $imageSlots = @(
-  @{ slot = 4; type = 'SMALL_IMAGE'; expr = '[COMPLICATION.SMALL_IMAGE]'; name = 'Block arcs' },
-  @{ slot = 5; type = 'PHOTO_IMAGE'; expr = '[COMPLICATION.PHOTO_IMAGE]'; name = 'Block arcs (photo probe)' }
+  @{ slot = 4; type = 'SMALL_IMAGE'; expr = '[COMPLICATION.SMALL_IMAGE]'; name = 'Block arcs' }
 )
 foreach ($s in $imageSlots) {
   [void]$sb.AppendLine("        <ComplicationSlot slotId=`"$($s.slot)`" x=`"0`" y=`"0`" width=`"450`" height=`"450`" displayName=`"$($s.name)`" supportedTypes=`"$($s.type)`" isCustomizable=`"FALSE`">")

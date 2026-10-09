@@ -4,7 +4,7 @@ Standalone Gradle project (not part of the Expo/React Native build) with two mod
 
 | Module | Package | What it is |
 |---|---|---|
-| `app/` | `com.planner1440.app` | **The code.** `DataLayerClient.kt` (Wearable Data Layer listener), `ComplicationHelper.kt` (four `SHORT_TEXT` complication data sources), and `WatchFaceService.kt` (an `androidx.wear.watchface` Canvas face). |
+| `app/` | `com.planner1440.app` | **The code.** `DataLayerClient.kt` (Wearable Data Layer listener), `ComplicationHelper.kt` (four `SHORT_TEXT` complication data sources), `BlockArcsComplicationService.kt` (paints today's blocks as arcs into a full-face `SMALL_IMAGE`), and `WatchFaceService.kt` (an `androidx.wear.watchface` Canvas face). |
 | `wff/` | `com.planner1440.wff` | **The face you actually see.** A no-code Watch Face Format v1 package (`res/raw/watchface.xml`) whose complication slots default to the data sources in `app/`. |
 
 Why two: **Wear OS 5+ launch devices refuse third-party androidx/Canvas faces.** On the
@@ -19,8 +19,9 @@ and the face never appears in the picker, while the complication data sources ar
 phone: syncToWatch() → modules/wearable-data-layer (PutDataMapRequest /1440/snapshot)
 watch: DataLayerClient.onDataChanged
          → SharedPreferences 1440_watch/snapshot        (single persisted copy)
-         → ComplicationDataSourceUpdateRequester.requestUpdateAll() for all four sources
+         → ComplicationDataSourceUpdateRequester.requestUpdateAll() for all five sources
          → in-process broadcast for the Canvas renderer (where one is allowed)
+       BlockArcsComplicationService  → 450x450 bitmap, one arc per block         (slot 4)
        CountUpComplicationService    → data only while countMode is "up"    (slot 1)
        CountDownComplicationService  → data only while countMode is "down"  (slot 3)
        NextBlockComplicationService  → "NOW Standup" / "till 3:30 PM"       (slot 2)
@@ -31,11 +32,20 @@ watch: DataLayerClient.onDataChanged
 
 **What the face draws itself, from the watch clock:** the ring, the 96 ticks, the 24-hour
 progress sweep, the minute hand, the wall clock, and the big minute figure. None of those
-need the phone, so they stay correct while the phone app is closed. The phone supplies only
-the count mode and the current/next block.
+need the phone, so they stay correct while the phone app is closed. The phone supplies the
+count mode, the current/next block, and the block list the arcs are drawn from.
 
-Per-block arcs are **not** on the WFF face: it has no way to draw N arbitrary arcs from a
-JSON blob. See `docs/STATUS.md` for the plan.
+**Per-block arcs** (pass 12a): WFF has no loop, so the face cannot draw N arcs from the
+snapshot itself. Instead `BlockArcsComplicationService` runs the `Canvas.drawArc` loop on
+the watch over the JSON already in `SharedPreferences` and hands the runtime a 450×450
+`ARGB_8888` bitmap as a `SMALL_IMAGE` (`SmallImageType.PHOTO`); the face shows it through
+`slotId="4"`, a full-face `isCustomizable="FALSE"` slot emitted first in the `<Scene>`, so
+the ring, ticks, sweep and hand draw over it. Probe result on the Galaxy Watch 7:
+`SMALL_IMAGE`/PHOTO renders **untinted and at exact scale** (pure red/green/blue sampled off
+the screen); `PHOTO_IMAGE` is refused by WearServices (`ComplicationPackageChecker:
+Unexpected complication data type PHOTO_IMAGE`) and the slot stays NOT_CONFIGURED. The
+bitmap is redrawn only when a snapshot arrives (`requestUpdateAll()`) or the face reloads,
+so anything that must move by itself (hand, sweep, figure) stays in WFF.
 
 ## What this runtime will and will not do
 
@@ -62,13 +72,17 @@ no parse error, the element or value just does not appear:
   `[HOUR_1_12]` and `[AMPM_STATE]` (0 = AM, 1 = PM) are verified to resolve.
 - **Complication expressions are scoped to their own slot.** Nothing outside a
   `<ComplicationSlot>` can be styled from phone data, which is why the ring, ticks and hand
-  stay amber in both count modes while the centre figure changes colour.
+  stay amber in both count modes while the centre figure changes colour. (Static art can
+  now be moved into the full-face arcs bitmap and coloured there; the hand and sweep cannot,
+  because that bitmap only refreshes on a snapshot push.)
+- **Image slots:** a full-face `SMALL_IMAGE` slot shows a `SmallImageType.PHOTO` bitmap
+  untinted and unscaled; `PHOTO_IMAGE` sources are rejected by WearServices on this device.
 - `DefaultProviderPolicy` wants `primaryProviderType`, not `primaryProviderDefaultType`.
 - Rotate a hand with a full-size `<Group pivotX="0.5" pivotY="0.5">` + `Transform angle`; a
   `Transform` on a narrow `PartDraw` does not render.
 
-The runtime renumbers slots in its logs: our `slotId` 1, 3, 2 appear as `[11]`, `[12]`,
-`[13]` in declaration order.
+The runtime renumbers slots in its logs in declaration order: our `slotId` 4, 1, 3, 2
+appear as `[11:SMALL_IMAGE]`, `[12]`, `[13]`, `[14]`.
 
 ## Build
 

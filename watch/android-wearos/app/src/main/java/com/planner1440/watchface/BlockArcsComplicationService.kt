@@ -11,7 +11,6 @@ import android.util.Log
 import androidx.wear.watchface.complications.data.ComplicationData
 import androidx.wear.watchface.complications.data.ComplicationType
 import androidx.wear.watchface.complications.data.NoDataComplicationData
-import androidx.wear.watchface.complications.data.PhotoImageComplicationData
 import androidx.wear.watchface.complications.data.PlainComplicationText
 import androidx.wear.watchface.complications.data.SmallImage
 import androidx.wear.watchface.complications.data.SmallImageComplicationData
@@ -54,15 +53,19 @@ class BlockArcsComplicationService : SuspendingComplicationDataSourceService() {
         private const val ALPHA    = 179            // 0.7 * 255, as EventArcs.tsx
 
         /**
-         * Spike switch (pass 12a). While true every request draws a fixed probe instead of
+         * Probe switch (pass 12a). While true every request draws a fixed pattern instead of
          * the snapshot so the slot type / tint / scale question can be answered from a
-         * screenshot: SMALL_IMAGE requests get three arcs at the block radius, PHOTO_IMAGE
-         * requests get three at a smaller radius, each in three unmistakable colours.
+         * screenshot: three solid arcs at the block radius in red / green / blue.
+         * Resolved 2026-10-08 on the Galaxy Watch 7: SMALL_IMAGE (type PHOTO) renders them
+         * untinted (pure #FF0000 / #00FF00 / #0000FF sampled off the screen) and at exact
+         * full-face scale. PHOTO_IMAGE is rejected outright by WearServices
+         * ("ComplicationPackageChecker: Unexpected complication data type PHOTO_IMAGE") and
+         * the slot stays NOT_CONFIGURED, so only SMALL_IMAGE is served.
          */
-        const val SPIKE = true
+        const val SPIKE = false
 
-        /** Supported request types — whichever the face's slot asks for. */
-        private val IMAGE_TYPES = setOf(ComplicationType.SMALL_IMAGE, ComplicationType.PHOTO_IMAGE)
+        /** The one request type this source serves (see the PHOTO_IMAGE note above). */
+        private val IMAGE_TYPES = setOf(ComplicationType.SMALL_IMAGE)
     }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? {
@@ -129,38 +132,32 @@ class BlockArcsComplicationService : SuspendingComplicationDataSourceService() {
         c.drawArc(RectF(cx - radius, cx - radius, cx + radius, cx + radius), startAngle, sweep, false, arcPaint)
     }
 
-    /** Spike probe: three solid arcs whose colours say which slot type rendered them. */
+    /** Probe: 6-8h red, 12-14h green, 18-20h blue, solid, at the real block radius. */
+    @Suppress("UNUSED_PARAMETER")
     private fun spikeBitmap(type: ComplicationType): Bitmap {
         val bmp = newBitmap()
         val c = Canvas(bmp)
-        if (type == ComplicationType.SMALL_IMAGE) {
-            // 6-8h red, 12-14h green, 18-20h blue, at the real block radius
-            drawArc(c, 360,  120, Color.RED,   alpha = 255)
-            drawArc(c, 720,  120, Color.GREEN, alpha = 255)
-            drawArc(c, 1080, 120, Color.BLUE,  alpha = 255)
-        } else {
-            // same hours, inner radius, magenta / yellow / cyan
-            drawArc(c, 360,  120, Color.MAGENTA, radius = ARC_R - 30f, alpha = 255)
-            drawArc(c, 720,  120, Color.YELLOW,  radius = ARC_R - 30f, alpha = 255)
-            drawArc(c, 1080, 120, Color.CYAN,    radius = ARC_R - 30f, alpha = 255)
-        }
+        drawArc(c, 360,  120, Color.RED,   alpha = 255)
+        drawArc(c, 720,  120, Color.GREEN, alpha = 255)
+        drawArc(c, 1080, 120, Color.BLUE,  alpha = 255)
         return bmp
     }
 
     // ---- packaging -----------------------------------------------------------------------
 
+    /**
+     * SMALL_IMAGE of type PHOTO: the Wear spec says photo-type small images are shown as-is,
+     * not tinted, and this runtime honours that (verified by the probe above). The
+     * 450x450 ARGB bitmap goes through ashmem, so the binder limit is not a concern.
+     */
+    @Suppress("UNUSED_PARAMETER")
     private fun wrap(type: ComplicationType, bmp: Bitmap): ComplicationData {
         val icon = Icon.createWithBitmap(bmp)
         val description = PlainComplicationText.Builder("Today's blocks").build()
-        return if (type == ComplicationType.PHOTO_IMAGE) {
-            PhotoImageComplicationData.Builder(icon, description).build()
-        } else {
-            // PHOTO: the Wear spec says photo-type small images are shown as-is, not tinted.
-            SmallImageComplicationData.Builder(
-                SmallImage.Builder(icon, SmallImageType.PHOTO).build(),
-                description
-            ).build()
-        }
+        return SmallImageComplicationData.Builder(
+            SmallImage.Builder(icon, SmallImageType.PHOTO).build(),
+            description
+        ).build()
     }
 
     private fun snapshot(): JSONObject? {
