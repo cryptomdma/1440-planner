@@ -17,28 +17,48 @@ import androidx.wear.watchface.complications.data.SmallImageComplicationData
 import androidx.wear.watchface.complications.data.SmallImageType
 import androidx.wear.watchface.complications.datasource.ComplicationRequest
 import androidx.wear.watchface.complications.datasource.SuspendingComplicationDataSourceService
+import org.json.JSONArray
 import org.json.JSONObject
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import kotlin.math.cos
+import kotlin.math.sin
 
 /**
- * Today's blocks as coloured arcs, drawn here on the watch into a bitmap and shown by the
- * WFF face through a full-face image complication slot (slot 4 in
- * tools/make-watchface.ps1) that sits underneath the ring, ticks and hand.
+ * The static art of the face, drawn here on the watch into one bitmap that the WFF face
+ * shows through a full-face image complication slot (slot 4 in tools/make-watchface.ps1)
+ * underneath the 24 h sweep, the hand, the centre dial and the figure. Three layers, in
+ * paint order:
+ *
+ *   1. the outer ring circle and the 96 ticks, in the COUNT-MODE colour (amber counting
+ *      up, cyan counting down) — they were WFF `<PartDraw>`s until pass 12, stuck amber
+ *      because nothing outside a slot can be styled from phone data;
+ *   2. one thin arc per category time range on that outer ring (`ranges` in the
+ *      snapshot, pass 12) — the owner's two-ring form: thin outer ring = categories;
+ *   3. one thicker arc per block at the block radius (`events`, pass 12a).
  *
  * Watch Face Format has no loop, so it cannot instantiate one arc per block itself; and
  * the Canvas face that could is blocked on Wear OS 6. A complication data source is the
- * one piece of our code the runtime does run for the face, so the loop lives here:
- * `Canvas.drawArc` over the `events` array of the snapshot [DataLayerClient] persisted.
- * The colours are hex strings the phone already resolved per category, so a user-made
- * category needs nothing on this side.
+ * one piece of our code the runtime does run for the face, so the loops live here, over
+ * the snapshot [DataLayerClient] persisted. The colours are hex strings the phone already
+ * resolved per category, so a user-made category needs nothing on this side.
  *
- * Geometry matches the generator (450x450 canvas, r = 180): arcs at r - r * 0.2, stroke
- * 4.5, butt caps, 0.7 alpha — the same look as the in-app preview (EventArcs.tsx).
+ * Geometry matches the generator (450x450 canvas, r = 180): block arcs at r - r * 0.2,
+ * stroke 4.5, 0.7 alpha (as EventArcs.tsx); the ring at r + r * 0.125 with the category
+ * arcs on it at stroke 2.5; the ticks exactly as make-watchface.ps1 used to emit them.
  * `Canvas.drawArc`'s 0 degrees is 3 o'clock, hence the -90.
  *
- * Refresh: UPDATE_PERIOD_SECONDS is 0; [DataLayerClient] calls requestUpdateAll() on this
- * source after every snapshot, exactly as it does for the count gates. With nothing to
- * draw it returns [NoDataComplicationData] (never null — null means "no change" and the
- * slot would keep yesterday's arcs).
+ * What may NOT move in here: the sweep, the hand and the figure. This bitmap is redrawn
+ * only on a snapshot push (`requestUpdateAll()` from [DataLayerClient]) or a face reload,
+ * and they must tick on their own, so they stay WFF.
+ *
+ * Gate: no snapshot at all (fresh install, nothing ever pushed) -> the ring and ticks
+ * still have to show, so a bitmap in amber is returned; with a snapshot present there is
+ * ALWAYS a bitmap, arcs or not. [NoDataComplicationData] is reserved for a request type we
+ * do not serve (never null — null means "no change" and the slot would keep its last
+ * frame). A snapshot whose `date` is not the watch's local today gets ring and ticks only:
+ * yesterday's blocks must not sit on the face past midnight until the phone next pushes.
  */
 class BlockArcsComplicationService : SuspendingComplicationDataSourceService() {
 
@@ -48,9 +68,29 @@ class BlockArcsComplicationService : SuspendingComplicationDataSourceService() {
         /** Face design size; the runtime scales the bitmap into the slot's bounds. */
         const val SIZE = 450
         private const val R        = 180f
-        private const val ARC_R    = R - R * 0.2f   // 144, as in make-preview.ps1
+        private const val ARC_R    = R - R * 0.2f     // 144, as in make-preview.ps1
+        private const val RING_R   = R + R * 0.125f   // 202.5, the outer ring of the generator
         private const val STROKE   = 4.5f
-        private const val ALPHA    = 179            // 0.7 * 255, as EventArcs.tsx
+        private const val ALPHA    = 179              // 0.7 * 255, as EventArcs.tsx
+
+        /** Category-range arcs on the outer ring: thinner and fainter than the blocks. */
+        private const val RANGE_STROKE = 2.5f
+        private const val RANGE_ALPHA  = 140
+
+        // The static art, exactly as make-watchface.ps1 emitted it before pass 12.
+        private const val RING_STROKE   = 1.5f
+        private const val RING_ALPHA    = 0x8C          // #8CF59E0B
+        private const val TICK_COUNT    = 96
+        private const val MAJOR_STROKE  = 1.8f
+        private const val MAJOR_ALPHA   = 0xE6          // #E6F59E0B
+        private const val MINOR_STROKE  = 0.6f
+        private const val MINOR_ALPHA   = 0xB4          // #B43D4F66
+        private const val MINOR_COLOR   = 0xFF3D4F66.toInt()
+
+        /** Count-mode accents: `countMode` "up" -> amber (the default), "down" -> cyan. */
+        private const val AMBER = 0xFFF59E0B.toInt()
+        private const val CYAN  = 0xFF38BDF8.toInt()
+        private const val FALLBACK_COLOR = 0xFF94A3B8.toInt()
 
         /**
          * Probe switch (pass 12a). While true every request draws a fixed pattern instead of
@@ -72,6 +112,9 @@ class BlockArcsComplicationService : SuspendingComplicationDataSourceService() {
         if (type !in IMAGE_TYPES) return null
         val bmp = newBitmap()
         val c = Canvas(bmp)
+        drawStaticArt(c, AMBER)
+        drawRange(c, 360, 720,   Color.parseColor("#38BDF8"))
+        drawRange(c, 780, 1080,  Color.parseColor("#A78BFA"))
         drawArc(c, 540, 60,  Color.parseColor("#38BDF8"))
         drawArc(c, 660, 45,  Color.parseColor("#34D399"))
         drawArc(c, 780, 90,  Color.parseColor("#FBBF24"))
@@ -88,28 +131,52 @@ class BlockArcsComplicationService : SuspendingComplicationDataSourceService() {
             return wrap(type, spikeBitmap(type))
         }
 
-        val snapshot = snapshot() ?: return NoDataComplicationData()
-        val events = snapshot.optJSONArray("events")
-        if (events == null || events.length() == 0) {
-            Log.d(TAG, "no events in snapshot -> NoData")
-            return NoDataComplicationData()
-        }
-
         val bmp = newBitmap()
         val c = Canvas(bmp)
+
+        val snapshot = snapshot()
+        if (snapshot == null) {
+            // Nothing ever pushed (fresh install): the face still needs its ring and ticks.
+            drawStaticArt(c, AMBER)
+            Log.d(TAG, "no snapshot -> static art only (amber) for $type")
+            return wrap(type, bmp)
+        }
+
+        val accent = if (snapshot.optString("countMode", "up") == "down") CYAN else AMBER
+        drawStaticArt(c, accent)
+
+        val today = localToday()
+        val date  = snapshot.optString("date", "")
+        if (date != today) {
+            // Past midnight with no push since: yesterday's arcs must not stay up.
+            Log.d(TAG, "snapshot dated $date, today is $today -> static art only for $type")
+            return wrap(type, bmp)
+        }
+
+        var ranges = 0
+        snapshot.optJSONArray("ranges")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val r = arr.optJSONObject(i) ?: continue
+                val start = r.optInt("startMinute", -1)
+                val end   = r.optInt("endMinute", -1)
+                if (start < 0 || end <= start) continue
+                drawRange(c, start, end, parseColor(r.optString("color", "")))
+                ranges++
+            }
+        }
+
+        val events = snapshot.optJSONArray("events") ?: JSONArray()
         var drawn = 0
         for (i in 0 until events.length()) {
             val ev = events.optJSONObject(i) ?: continue
             val start = ev.optInt("startMinute", -1)
             val dur   = ev.optInt("durationMinutes", 0)
             if (start < 0 || dur <= 0) continue
-            val color = try { Color.parseColor(ev.optString("color", "#94A3B8")) }
-                        catch (e: IllegalArgumentException) { Color.parseColor("#94A3B8") }
-            drawArc(c, start, dur, color)
+            drawArc(c, start, dur, parseColor(ev.optString("color", "")))
             drawn++
         }
-        Log.d(TAG, "drew $drawn/${events.length()} arcs for $type")
-        return if (drawn == 0) NoDataComplicationData() else wrap(type, bmp)
+        Log.d(TAG, "drew $drawn/${events.length()} arcs, $ranges ranges, ${if (accent == CYAN) "cyan" else "amber"} ring for $type")
+        return wrap(type, bmp)
     }
 
     // ---- drawing -------------------------------------------------------------------------
@@ -122,15 +189,58 @@ class BlockArcsComplicationService : SuspendingComplicationDataSourceService() {
         strokeCap = Paint.Cap.BUTT
     }
 
+    private val linePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeCap = Paint.Cap.BUTT
+    }
+
     /** One block: [startMinute] from midnight, [durationMinutes] long, at the block radius. */
-    private fun drawArc(c: Canvas, startMinute: Int, durationMinutes: Int, color: Int, radius: Float = ARC_R, alpha: Int = ALPHA) {
+    private fun drawArc(c: Canvas, startMinute: Int, durationMinutes: Int, color: Int,
+                        radius: Float = ARC_R, alpha: Int = ALPHA, stroke: Float = STROKE) {
         val cx = SIZE / 2f
         val startAngle = startMinute / 1440f * 360f - 90f   // Canvas 0 deg = 3 o'clock
         val sweep      = durationMinutes.coerceAtMost(1440) / 1440f * 360f
         arcPaint.color = color
         arcPaint.alpha = alpha
+        arcPaint.strokeWidth = stroke
         c.drawArc(RectF(cx - radius, cx - radius, cx + radius, cx + radius), startAngle, sweep, false, arcPaint)
     }
+
+    /** One category time range, [startMinute]..[endMinute], as a thin arc on the outer ring. */
+    private fun drawRange(c: Canvas, startMinute: Int, endMinute: Int, color: Int) =
+        drawArc(c, startMinute, endMinute - startMinute, color, RING_R, RANGE_ALPHA, RANGE_STROKE)
+
+    /**
+     * The outer ring circle and the 96 ticks in [accent] — a port of the two `<PartDraw>`
+     * blocks make-watchface.ps1 emitted until pass 12, same radii, widths and alphas.
+     * Major ticks (every 4th of 96 = one per hour) are in the accent; minor ticks keep the
+     * slate `#3D4F66` they always had.
+     */
+    private fun drawStaticArt(c: Canvas, accent: Int) {
+        val cx = SIZE / 2f
+        linePaint.color = accent
+        linePaint.alpha = RING_ALPHA
+        linePaint.strokeWidth = RING_STROKE
+        c.drawCircle(cx, cx, RING_R, linePaint)
+
+        for (i in 0 until TICK_COUNT) {
+            val rad   = Math.toRadians(i / TICK_COUNT.toDouble() * 360.0 - 90.0)
+            val major = i % 4 == 0
+            val inner = if (major) R - R * 0.06f else R + R * 0.01f
+            val outer = R + R * 0.06f
+            linePaint.color = if (major) accent else MINOR_COLOR
+            linePaint.alpha = if (major) MAJOR_ALPHA else MINOR_ALPHA
+            linePaint.strokeWidth = if (major) MAJOR_STROKE else MINOR_STROKE
+            c.drawLine(
+                (cx + inner * cos(rad)).toFloat(), (cx + inner * sin(rad)).toFloat(),
+                (cx + outer * cos(rad)).toFloat(), (cx + outer * sin(rad)).toFloat(),
+                linePaint
+            )
+        }
+    }
+
+    private fun parseColor(hex: String): Int =
+        try { Color.parseColor(hex) } catch (e: IllegalArgumentException) { FALLBACK_COLOR }
 
     /** Probe: 6-8h red, 12-14h green, 18-20h blue, solid, at the real block radius. */
     @Suppress("UNUSED_PARAMETER")
@@ -165,4 +275,8 @@ class BlockArcsComplicationService : SuspendingComplicationDataSourceService() {
             .getString(DataLayerClient.PREFS_KEY, null) ?: return null
         return try { JSONObject(json) } catch (e: Exception) { null }
     }
+
+    /** The watch's local date in the snapshot's `yyyy-MM-dd` form (core's `today()`). */
+    private fun localToday(): String =
+        SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date())
 }

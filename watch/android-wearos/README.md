@@ -21,7 +21,9 @@ watch: DataLayerClient.onDataChanged
          → SharedPreferences 1440_watch/snapshot        (single persisted copy)
          → ComplicationDataSourceUpdateRequester.requestUpdateAll() for all five sources
          → in-process broadcast for the Canvas renderer (where one is allowed)
-       BlockArcsComplicationService  → 450x450 bitmap, one arc per block         (slot 4)
+       BlockArcsComplicationService  → 450x450 bitmap: ring + ticks in the count-mode
+                                       colour, a thin arc per category range, one
+                                       arc per block                              (slot 4)
        CountUpComplicationService    → data only while countMode is "up"    (slot 1)
        CountDownComplicationService  → data only while countMode is "down"  (slot 3)
        NextBlockComplicationService  → "NOW Standup" / "till 3:30 PM"       (slot 2)
@@ -30,22 +32,28 @@ watch: DataLayerClient.onDataChanged
                                           else's face.
 ```
 
-**What the face draws itself, from the watch clock:** the ring, the 96 ticks, the 24-hour
-progress sweep, the minute hand, the wall clock, and the big minute figure. None of those
-need the phone, so they stay correct while the phone app is closed. The phone supplies the
-count mode, the current/next block, and the block list the arcs are drawn from.
+**What the face draws itself, from the watch clock:** the 24-hour progress sweep, the
+minute hand, the wall clock, and the big minute figure. None of those need the phone, so
+they stay correct while the phone app is closed. The phone supplies the count mode, the
+current/next block, the block list the arcs are drawn from and the category time ranges.
 
-**Per-block arcs** (pass 12a): WFF has no loop, so the face cannot draw N arcs from the
-snapshot itself. Instead `BlockArcsComplicationService` runs the `Canvas.drawArc` loop on
+**The arcs bitmap** (passes 12a and 12): WFF has no loop, so the face cannot draw N arcs
+from the snapshot itself. Instead `BlockArcsComplicationService` runs the `Canvas` loops on
 the watch over the JSON already in `SharedPreferences` and hands the runtime a 450×450
 `ARGB_8888` bitmap as a `SMALL_IMAGE` (`SmallImageType.PHOTO`); the face shows it through
 `slotId="4"`, a full-face `isCustomizable="FALSE"` slot emitted first in the `<Scene>`, so
-the ring, ticks, sweep and hand draw over it. Probe result on the Galaxy Watch 7:
-`SMALL_IMAGE`/PHOTO renders **untinted and at exact scale** (pure red/green/blue sampled off
-the screen); `PHOTO_IMAGE` is refused by WearServices (`ComplicationPackageChecker:
-Unexpected complication data type PHOTO_IMAGE`) and the slot stays NOT_CONFIGURED. The
-bitmap is redrawn only when a snapshot arrives (`requestUpdateAll()`) or the face reloads,
-so anything that must move by itself (hand, sweep, figure) stays in WFF.
+the sweep and hand draw over it. It paints, in order: the outer ring circle and the 96
+ticks in the count-mode colour (amber up, cyan down — they used to be WFF `<PartDraw>`s
+and were stuck amber), one thin arc per category time range (`ranges` in the snapshot) on
+that ring, and one thicker arc per block at the block radius. With no snapshot at all
+(fresh install) it still returns ring and ticks in amber; with a snapshot whose `date` is
+not the watch's local today it returns ring and ticks only, so yesterday's blocks never
+sit on the face past midnight. Probe result on the Galaxy Watch 7: `SMALL_IMAGE`/PHOTO
+renders **untinted and at exact scale** (pure red/green/blue sampled off the screen);
+`PHOTO_IMAGE` is refused by WearServices (`ComplicationPackageChecker: Unexpected
+complication data type PHOTO_IMAGE`) and the slot stays NOT_CONFIGURED. The bitmap is
+redrawn only when a snapshot arrives (`requestUpdateAll()`) or the face reloads, so
+anything that must move by itself (hand, sweep, figure) stays in WFF.
 
 ## What this runtime will and will not do
 
@@ -71,10 +79,11 @@ no parse error, the element or value just does not appear:
   either the same slot-gating trick or a WFF `UserConfiguration` on the watch. For 12-hour,
   `[HOUR_1_12]` and `[AMPM_STATE]` (0 = AM, 1 = PM) are verified to resolve.
 - **Complication expressions are scoped to their own slot.** Nothing outside a
-  `<ComplicationSlot>` can be styled from phone data, which is why the ring, ticks and hand
-  stay amber in both count modes while the centre figure changes colour. (Static art can
-  now be moved into the full-face arcs bitmap and coloured there; the hand and sweep cannot,
-  because that bitmap only refreshes on a snapshot push.)
+  `<ComplicationSlot>` can be styled from phone data, which is why the hand and sweep stay
+  amber in both count modes while the centre figure changes colour. The ring and ticks
+  escaped this in pass 12 by moving into the full-face arcs bitmap, where the watch app
+  colours them; the hand and sweep cannot follow, because that bitmap only refreshes on a
+  snapshot push.
 - **Image slots:** a full-face `SMALL_IMAGE` slot shows a `SmallImageType.PHOTO` bitmap
   untinted and unscaled; `PHOTO_IMAGE` sources are rejected by WearServices on this device.
 - `DefaultProviderPolicy` wants `primaryProviderType`, not `primaryProviderDefaultType`.
